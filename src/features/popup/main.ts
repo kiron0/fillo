@@ -43,6 +43,7 @@ const state: PopupState = {
 };
 
 const AUTOSAVE_DELAY_MS = 500;
+const NO_MAPPING_SENTINEL = "__no_mapping__";
 
 const formTitle = document.querySelector<HTMLHeadingElement>("#form-title")!;
 const formMeta = document.querySelector<HTMLParagraphElement>("#form-meta")!;
@@ -179,10 +180,10 @@ function updateFieldMapping(fieldId: string, value: string): void {
   const previousMapping = state.mappings[fieldId];
 
   if (!value) {
-    delete state.mappings[fieldId];
+    state.mappings[fieldId] = NO_MAPPING_SENTINEL;
     state.suppressedMappingFieldIds.add(fieldId);
 
-    if (profile && previousMapping) {
+    if (profile && previousMapping && previousMapping !== NO_MAPPING_SENTINEL) {
       const previousMappedValue = profile.values[previousMapping] as FieldValue | undefined;
       if (fieldValuesEqual(state.values[fieldId], previousMappedValue)) {
         const presetValue = state.preset?.values[fieldId];
@@ -530,6 +531,7 @@ function renderFields(): void {
       const noneOption = document.createElement("option");
       noneOption.value = "";
       noneOption.textContent = "No mapping";
+      noneOption.selected = !state.mappings[field.id] || state.mappings[field.id] === NO_MAPPING_SENTINEL;
       mappingSelect.append(noneOption);
 
       for (const key of profileKeys) {
@@ -576,16 +578,20 @@ function applyProfile(profileId: string | null, autosave = true): void {
     }
 
     const currentMapping = previousMappings[field.id];
+    const presetMapping = presetMappings[field.id];
     const isMappingSuppressed = state.suppressedMappingFieldIds.has(field.id);
+    const hasExplicitNoMapping = currentMapping === NO_MAPPING_SENTINEL || presetMapping === NO_MAPPING_SENTINEL;
     const mappingKey =
-      isMappingSuppressed
+      isMappingSuppressed || hasExplicitNoMapping
         ? undefined
         : ((profile && currentMapping && profile.values[currentMapping] !== undefined ? currentMapping : undefined) ??
-          (profile && presetMappings[field.id] && profile.values[presetMappings[field.id]] !== undefined ? presetMappings[field.id] : undefined) ??
+          (profile && presetMapping && profile.values[presetMapping] !== undefined ? presetMapping : undefined) ??
           suggestProfileKey(field, profile));
 
     if (mappingKey) {
       nextMappings[field.id] = mappingKey;
+    } else if (hasExplicitNoMapping && !isMappingSuppressed) {
+      nextMappings[field.id] = NO_MAPPING_SENTINEL;
     }
 
     if (state.dirtyFieldIds.has(field.id) && previousValues[field.id] !== undefined) {

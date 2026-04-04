@@ -186,4 +186,30 @@ describe("storage", () => {
       vi.useRealTimers();
     }
   });
+
+  it("uses the browser lock manager when available", async () => {
+    const navigatorWithLocks = {
+      locks: {
+        request: vi.fn(async (_name: string, callback: () => Promise<unknown>) => callback()),
+      },
+    };
+
+    vi.stubGlobal("navigator", navigatorWithLocks);
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      name: "Locked Form",
+      formKey: "locked-form",
+      formTitle: "Locked Form",
+      fields: [],
+      values: { fullName: "Toufiq Hasan" },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await savePreset(preset);
+
+    expect(navigatorWithLocks.locks.request).toHaveBeenCalledTimes(1);
+    expect(navigatorWithLocks.locks.request).toHaveBeenCalledWith("fillo-storage-write", expect.any(Function));
+  });
 });

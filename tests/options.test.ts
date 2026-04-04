@@ -196,4 +196,115 @@ describe("options", () => {
       expect(secondCardNameInput.value).toBe("Beta Draft");
     });
   });
+
+  it("preserves profile drafts when settings save and add profile run", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".card"));
+    const draftInput = cards[1]!.querySelector<HTMLInputElement>('[data-role="profile-name"]')!;
+    draftInput.value = "Beta Draft";
+
+    const autoLoadCheckbox = document.querySelector<HTMLInputElement>("#auto-load-profile")!;
+    autoLoadCheckbox.checked = false;
+    autoLoadCheckbox.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    document.querySelector<HTMLButtonElement>("#add-profile")!.click();
+    await vi.waitFor(() => {
+      expect(draftInput.value).toBe("Beta Draft");
+      expect((mock.state.profiles as Profile[])).toHaveLength(3);
+    });
+  });
+
+  it("preserves profile drafts when presets change and other profiles are deleted", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [
+        {
+          id: "preset-1",
+          name: "Registration",
+          formKey: "form-1",
+          formTitle: "Registration",
+          fields: [],
+          values: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".card"));
+    const draftInput = cards[1]!.querySelector<HTMLInputElement>('[data-role="profile-name"]')!;
+    draftInput.value = "Beta Draft";
+
+    const presetTitleInput = document.querySelectorAll<HTMLInputElement>(".card input")[2]!;
+    presetTitleInput.value = "Renamed preset";
+    document.querySelectorAll<HTMLButtonElement>(".button.accent")[1]!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    document.querySelector<HTMLButtonElement>(".card button:last-child")!.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(draftInput.value).toBe("Beta Draft");
+  });
 });

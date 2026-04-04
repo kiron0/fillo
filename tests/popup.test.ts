@@ -658,4 +658,59 @@ describe("popup", () => {
       otherText: "Biology",
     });
   });
+
+  it("keeps an explicit No mapping choice after reopening the popup", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(500);
+
+    vi.resetModules();
+    document.documentElement.innerHTML = popupHtml;
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
+  });
 });

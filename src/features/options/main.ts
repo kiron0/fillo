@@ -226,6 +226,147 @@ function updateProfileCardMeta(card: HTMLElement, profile: Profile): void {
   meta.textContent = `${Object.keys(profile.values).length} saved value${Object.keys(profile.values).length === 1 ? "" : "s"}`;
 }
 
+function createProfileCard(profile: Profile): HTMLElement {
+  const card = document.createElement("article");
+  card.className = "card";
+  card.dataset.profileId = profile.id;
+
+  const nameInput = document.createElement("input");
+  nameInput.value = profile.name;
+  nameInput.dataset.role = "profile-name";
+
+  const meta = document.createElement("p");
+  meta.className = "profile-meta";
+  meta.textContent = `${Object.keys(profile.values).length} saved value${Object.keys(profile.values).length === 1 ? "" : "s"}`;
+
+  const values = document.createElement("div");
+  values.className = "profile-values";
+
+  const addValueRow = (key = "", value: string | number | boolean | string[] = ""): void => {
+    const row = createProfileValueRow(key, value, () => row.remove());
+    values.append(row);
+  };
+
+  for (const [key, value] of Object.entries(profile.values)) {
+    addValueRow(key, value);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+
+  const addEntryButton = document.createElement("button");
+  addEntryButton.textContent = "Add field";
+  addEntryButton.addEventListener("click", () => addValueRow());
+
+  const saveButton = document.createElement("button");
+  saveButton.className = "button accent";
+  saveButton.textContent = "Save profile";
+  saveButton.addEventListener("click", () => {
+    void persistProfile(card, profile).catch((error) => {
+      setStatus(error instanceof Error ? error.message : "Unable to save profile.");
+    });
+  });
+
+  const deleteButton = document.createElement("button");
+  deleteButton.textContent = "Delete profile";
+  deleteButton.addEventListener("click", () => {
+    void deleteProfile(profile.id)
+      .then(() => {
+        state.profiles = state.profiles.filter((item) => item.id !== profile.id);
+        if (state.settings.defaultProfileId === profile.id) {
+          state.settings = {
+            ...state.settings,
+            defaultProfileId: null,
+          };
+        }
+        renderDefaultProfileOptions();
+        card.remove();
+        if (!state.profiles.length) {
+          renderProfiles();
+        }
+        setStatus(`Deleted profile "${profile.name}".`);
+      })
+      .catch((error) => {
+        setStatus(error instanceof Error ? error.message : "Unable to delete profile.");
+      });
+  });
+
+  actions.append(addEntryButton, saveButton, deleteButton);
+  card.append(nameInput, meta, values, actions);
+  return card;
+}
+
+function updatePresetCardMeta(card: HTMLElement, preset: FormPreset): void {
+  const meta = card.querySelector<HTMLParagraphElement>(".preset-meta");
+  if (!meta) {
+    return;
+  }
+
+  meta.textContent = `${preset.fields.length} field${preset.fields.length === 1 ? "" : "s"} | Updated ${new Date(preset.updatedAt).toLocaleString()}`;
+}
+
+function createPresetCard(preset: FormPreset): HTMLElement {
+  const card = document.createElement("article");
+  card.className = "card";
+  card.dataset.presetId = preset.id;
+
+  const titleInput = document.createElement("input");
+  titleInput.value = preset.name;
+
+  const meta = document.createElement("p");
+  meta.className = "preset-meta";
+  meta.textContent = `${preset.fields.length} field${preset.fields.length === 1 ? "" : "s"} | Updated ${new Date(preset.updatedAt).toLocaleString()}`;
+
+  const saveButton = document.createElement("button");
+  saveButton.className = "button accent";
+  saveButton.textContent = "Rename";
+  saveButton.addEventListener("click", async () => {
+    try {
+      const nextPreset: FormPreset = {
+        ...preset,
+        name: titleInput.value.trim() || preset.name,
+        updatedAt: Date.now(),
+      };
+      await savePreset(nextPreset);
+      const presetIndex = state.presets.findIndex((item) => item.id === nextPreset.id);
+      if (presetIndex >= 0) {
+        state.presets[presetIndex] = nextPreset;
+      }
+      preset.name = nextPreset.name;
+      preset.updatedAt = nextPreset.updatedAt;
+      titleInput.value = nextPreset.name;
+      updatePresetCardMeta(card, nextPreset);
+      setStatus("Updated preset name.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to rename saved form.");
+    }
+  });
+
+  const deleteButton = document.createElement("button");
+  deleteButton.textContent = "Delete";
+  deleteButton.addEventListener("click", () => {
+    void deletePreset(preset.id)
+      .then(() => {
+        state.presets = state.presets.filter((item) => item.id !== preset.id);
+        card.remove();
+        if (!state.presets.length) {
+          renderPresets();
+        }
+        setStatus(`Deleted saved form "${preset.name}".`);
+      })
+      .catch((error) => {
+        setStatus(error instanceof Error ? error.message : "Unable to delete saved form.");
+      });
+  });
+
+  const actions = document.createElement("div");
+  actions.className = "card-actions";
+  actions.append(saveButton, deleteButton);
+
+  card.append(titleInput, meta, actions);
+  return card;
+}
+
 async function persistProfile(card: HTMLElement, profile: Profile): Promise<void> {
   const nameInput = card.querySelector<HTMLInputElement>('[data-role="profile-name"]')!;
   const rows = Array.from(card.querySelectorAll<HTMLElement>(".value-row"));
@@ -272,61 +413,7 @@ function renderProfiles(): void {
   }
 
   for (const profile of state.profiles) {
-    const card = document.createElement("article");
-    card.className = "card";
-
-    const nameInput = document.createElement("input");
-    nameInput.value = profile.name;
-    nameInput.dataset.role = "profile-name";
-
-    const meta = document.createElement("p");
-    meta.className = "profile-meta";
-    meta.textContent = `${Object.keys(profile.values).length} saved value${Object.keys(profile.values).length === 1 ? "" : "s"}`;
-
-    const values = document.createElement("div");
-    values.className = "profile-values";
-
-    const addValueRow = (key = "", value: string | number | boolean | string[] = ""): void => {
-      const row = createProfileValueRow(key, value, () => row.remove());
-      values.append(row);
-    };
-
-    for (const [key, value] of Object.entries(profile.values)) {
-      addValueRow(key, value);
-    }
-
-    const actions = document.createElement("div");
-    actions.className = "card-actions";
-
-    const addEntryButton = document.createElement("button");
-    addEntryButton.textContent = "Add field";
-    addEntryButton.addEventListener("click", () => addValueRow());
-
-    const saveButton = document.createElement("button");
-    saveButton.className = "button accent";
-    saveButton.textContent = "Save profile";
-    saveButton.addEventListener("click", () => {
-      void persistProfile(card, profile).catch((error) => {
-        setStatus(error instanceof Error ? error.message : "Unable to save profile.");
-      });
-    });
-
-    const deleteButton = document.createElement("button");
-    deleteButton.textContent = "Delete profile";
-    deleteButton.addEventListener("click", () => {
-      void deleteProfile(profile.id)
-        .then(async () => {
-          await refresh();
-          setStatus(`Deleted profile "${profile.name}".`);
-        })
-        .catch((error) => {
-          setStatus(error instanceof Error ? error.message : "Unable to delete profile.");
-        });
-    });
-
-    actions.append(addEntryButton, saveButton, deleteButton);
-    card.append(nameInput, meta, values, actions);
-    profilesContainer.append(card);
+    profilesContainer.append(createProfileCard(profile));
   }
 }
 
@@ -342,52 +429,7 @@ function renderPresets(): void {
   }
 
   for (const preset of state.presets) {
-    const card = document.createElement("article");
-    card.className = "card";
-
-    const titleInput = document.createElement("input");
-    titleInput.value = preset.name;
-
-    const meta = document.createElement("p");
-    meta.className = "preset-meta";
-    meta.textContent = `${preset.fields.length} field${preset.fields.length === 1 ? "" : "s"} | Updated ${new Date(preset.updatedAt).toLocaleString()}`;
-
-    const saveButton = document.createElement("button");
-    saveButton.className = "button accent";
-    saveButton.textContent = "Rename";
-    saveButton.addEventListener("click", async () => {
-      try {
-        await savePreset({
-          ...preset,
-          name: titleInput.value.trim() || preset.name,
-          updatedAt: Date.now(),
-        });
-        await refresh();
-        setStatus("Updated preset name.");
-      } catch (error) {
-        setStatus(error instanceof Error ? error.message : "Unable to rename saved form.");
-      }
-    });
-
-    const deleteButton = document.createElement("button");
-    deleteButton.textContent = "Delete";
-    deleteButton.addEventListener("click", () => {
-      void deletePreset(preset.id)
-        .then(async () => {
-          await refresh();
-          setStatus(`Deleted saved form "${preset.name}".`);
-        })
-        .catch((error) => {
-          setStatus(error instanceof Error ? error.message : "Unable to delete saved form.");
-        });
-    });
-
-    const actions = document.createElement("div");
-    actions.className = "card-actions";
-    actions.append(saveButton, deleteButton);
-
-    card.append(titleInput, meta, actions);
-    presetsContainer.append(card);
+    presetsContainer.append(createPresetCard(preset));
   }
 }
 
@@ -423,8 +465,8 @@ async function persistSettingsFromControls(): Promise<void> {
     .then(async () => {
       try {
         await persistSettings();
-        if (requestId === latestSettingsRequestId) {
-          await refresh();
+        if (requestId !== latestSettingsRequestId) {
+          return;
         }
       } catch (error) {
         if (requestId !== latestSettingsRequestId) {
@@ -458,8 +500,19 @@ showBackupSectionCheckbox.addEventListener("change", () => {
 });
 
 addProfileButton.addEventListener("click", async () => {
-  await saveProfile(createEmptyProfile());
-  await refresh();
+  const profile = createEmptyProfile();
+  await saveProfile(profile);
+  if (!state.profiles.some((item) => item.id === profile.id)) {
+    state.profiles = [...state.profiles, profile];
+  }
+  renderDefaultProfileOptions();
+  const emptyProfilesMessage = profilesContainer.querySelector(".profile-meta");
+  if (state.profiles.length === 1) {
+    renderProfiles();
+  } else {
+    emptyProfilesMessage?.remove();
+    profilesContainer.append(createProfileCard(profile));
+  }
   setStatus("Added a new profile.");
 });
 

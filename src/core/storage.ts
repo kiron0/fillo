@@ -1,5 +1,5 @@
 import type { AppSettings, ExportedAppData, FormPreset, ImportedAppData, Profile } from "./types";
-import { storageGet, storageRemove, storageSet } from "./chrome-api";
+import { storageGet, storageSet } from "./chrome-api";
 import { DEFAULT_SETTINGS } from "./types";
 
 const STORAGE_KEYS = {
@@ -15,97 +15,22 @@ type StorageShape = {
 };
 
 type StorageKeyName = keyof typeof STORAGE_KEYS;
-type StorageLock = {
-  token: string;
-  expiresAt: number;
-};
-
-const STORAGE_LOCK_PREFIX = "__lock__";
-const LOCK_RETRY_MS = 25;
-const LOCK_TTL_MS = 5_000;
-const LOCK_TIMEOUT_MS = LOCK_TTL_MS + 1_000;
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
-function createLockToken(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-}
-
-function getLockKey(name: StorageKeyName): string {
-  return `${STORAGE_LOCK_PREFIX}${name}`;
-}
-
-async function readLock(name: StorageKeyName): Promise<StorageLock | null> {
-  const lockKey = getLockKey(name);
-  const result = await storageGet<Record<string, unknown>>([lockKey]);
-  const value = result[lockKey];
-  if (typeof value !== "object" || value === null) {
-    return null;
-  }
-
-  const token = "token" in value ? value.token : undefined;
-  const expiresAt = "expiresAt" in value ? value.expiresAt : undefined;
-  return typeof token === "string" && typeof expiresAt === "number"
-    ? { token, expiresAt }
-    : null;
-}
-
-async function acquireLock(name: StorageKeyName): Promise<string> {
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
-  const token = createLockToken();
-  const lockKey = getLockKey(name);
-
-  while (Date.now() < deadline) {
-    const currentLock = await readLock(name);
-    if (!currentLock || currentLock.expiresAt <= Date.now()) {
-      await storageSet({
-        [lockKey]: {
-          token,
-          expiresAt: Date.now() + LOCK_TTL_MS,
-        },
-      });
-
-      const confirmedLock = await readLock(name);
-      if (confirmedLock?.token === token) {
-        return token;
-      }
-    }
-
-    await wait(LOCK_RETRY_MS);
-  }
-
-  throw new Error(`Unable to acquire storage lock for ${name}.`);
-}
-
-async function releaseLock(name: StorageKeyName, token: string): Promise<void> {
-  const currentLock = await readLock(name);
-  if (currentLock?.token === token) {
-    await storageRemove([getLockKey(name)]);
-  }
-}
+const STORAGE_WRITE_LOCK_NAME = "fillo-storage-write";
+let fallbackWriteQueue: Promise<void> = Promise.resolve();
 
 async function withStorageLocks<T>(names: StorageKeyName[], action: () => Promise<T>): Promise<T> {
-  const tokens = new Map<StorageKeyName, string>();
-  const sortedNames = [...new Set(names)].sort();
+  void names;
 
-  try {
-    for (const name of sortedNames) {
-      tokens.set(name, await acquireLock(name));
-    }
-
-    return await action();
-  } finally {
-    for (const name of [...sortedNames].reverse()) {
-      const token = tokens.get(name);
-      if (token) {
-        await releaseLock(name, token);
-      }
-    }
+  if (globalThis.navigator?.locks?.request) {
+    return globalThis.navigator.locks.request(STORAGE_WRITE_LOCK_NAME, async () => action());
   }
+
+  const run = fallbackWriteQueue.then(action);
+  fallbackWriteQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 async function readProfiles(): Promise<Profile[]> {

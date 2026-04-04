@@ -95,7 +95,6 @@ function setInvalidPageState(title: string, message: string): void {
 
 function setReadyState(): void {
   errorCard.classList.add("hidden");
-  statusCard.classList.remove("hidden");
 }
 
 async function sendBackgroundMessage<T>(message: BackgroundRequest): Promise<T> {

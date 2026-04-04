@@ -9,7 +9,7 @@ const popupHtml = `
         <h1 id="form-title"></h1>
         <p id="form-meta"></p>
       </header>
-      <section id="status-card" class="status-card"></section>
+      <section id="status-card" class="status-card hidden"></section>
       <section id="error-card" class="error-card hidden">
         <h2 id="error-title"></h2>
         <p id="error-message"></p>
@@ -231,5 +231,33 @@ describe("popup", () => {
       expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
       expect(document.querySelector<HTMLButtonElement>("#reset-preset")!.disabled).toBe(true);
     });
+  });
+
+  it("keeps the status card hidden when a ready form has no message", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLDivElement>("#status-card")!.classList.contains("hidden")).toBe(true);
   });
 });

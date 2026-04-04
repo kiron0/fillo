@@ -75,15 +75,15 @@ function isImportedData(value: unknown): value is ImportedAppData {
 
   const payload = value as Record<string, unknown>;
 
-  if ("profiles" in payload && !Array.isArray(payload.profiles)) {
+  if (!("profiles" in payload) || !Array.isArray(payload.profiles)) {
     return false;
   }
 
-  if ("presets" in payload && !Array.isArray(payload.presets)) {
+  if (!("presets" in payload) || !Array.isArray(payload.presets)) {
     return false;
   }
 
-  if ("settings" in payload && (typeof payload.settings !== "object" || payload.settings === null || Array.isArray(payload.settings))) {
+  if (!("settings" in payload) || typeof payload.settings !== "object" || payload.settings === null || Array.isArray(payload.settings)) {
     return false;
   }
 
@@ -225,7 +225,9 @@ function renderProfiles(): void {
     saveButton.className = "button accent";
     saveButton.textContent = "Save profile";
     saveButton.addEventListener("click", () => {
-      void persistProfile(card, profile);
+      void persistProfile(card, profile).catch((error) => {
+        setStatus(error instanceof Error ? error.message : "Unable to save profile.");
+      });
     });
 
     const deleteButton = document.createElement("button");
@@ -273,13 +275,17 @@ function renderPresets(): void {
     saveButton.className = "button accent";
     saveButton.textContent = "Rename";
     saveButton.addEventListener("click", async () => {
-      await savePreset({
-        ...preset,
-        name: titleInput.value.trim() || preset.name,
-        updatedAt: Date.now(),
-      });
-      await refresh();
-      setStatus("Updated preset name.");
+      try {
+        await savePreset({
+          ...preset,
+          name: titleInput.value.trim() || preset.name,
+          updatedAt: Date.now(),
+        });
+        await refresh();
+        setStatus("Updated preset name.");
+      } catch (error) {
+        setStatus(error instanceof Error ? error.message : "Unable to rename saved form.");
+      }
     });
 
     const deleteButton = document.createElement("button");

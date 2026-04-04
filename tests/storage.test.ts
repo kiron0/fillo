@@ -4,6 +4,7 @@ import {
   getPresetByFormKey,
   getProfiles,
   getSettings,
+  importAppData,
   savePreset,
   saveProfile,
   saveSettings,
@@ -91,5 +92,26 @@ describe("storage", () => {
     expect((await exportAppData()).profiles).toHaveLength(1);
     await clearAllData();
     expect((await exportAppData()).profiles).toHaveLength(0);
+  });
+
+  it("rejects incomplete import payloads without clearing existing data", async () => {
+    await saveProfile({
+      id: "profile-1",
+      name: "Personal",
+      values: { email: "toufiq@example.com" },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    await expect(importAppData({})).rejects.toThrow("Import payload must include profiles, presets, and settings.");
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Personal",
+        values: { email: "toufiq@example.com" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
   });
 });

@@ -113,9 +113,13 @@ export async function exportAppData(): Promise<ExportedAppData> {
 }
 
 export async function importAppData(payload: ImportedAppData): Promise<void> {
+  if (!Array.isArray(payload.profiles) || !Array.isArray(payload.presets) || typeof payload.settings !== "object" || payload.settings === null) {
+    throw new Error("Import payload must include profiles, presets, and settings.");
+  }
+
   await writeAll({
-    profiles: payload.profiles ?? [],
-    presets: payload.presets ?? [],
-    settings: { ...DEFAULT_SETTINGS, ...(payload.settings ?? {}) },
+    profiles: payload.profiles,
+    presets: payload.presets,
+    settings: { ...DEFAULT_SETTINGS, ...payload.settings },
   });
 }

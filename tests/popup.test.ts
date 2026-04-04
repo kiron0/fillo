@@ -901,6 +901,78 @@ describe("popup", () => {
     expect(savedPreset.unmappedFieldIds ?? []).toEqual([]);
   });
 
+  it("does not restore an incompatible preset value when unmapping a profile-backed field", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: ["Math", "Physics"] },
+      mappings: { full_name: "fullName" },
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [preset],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("Alice");
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    const savedPreset = (mock.state.presets as FormPreset[])[0]!;
+    expect(savedPreset.values).toEqual({});
+    expect(savedPreset.unmappedFieldIds ?? []).toEqual(["full_name"]);
+  });
+
   it("flushes pending autosave before filling the form", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",

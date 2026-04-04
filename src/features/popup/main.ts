@@ -280,6 +280,15 @@ function hasStoredFieldValue(values: Record<string, FieldValue>, fieldId: string
   return Object.prototype.hasOwnProperty.call(values, fieldId);
 }
 
+function restorePresetFieldValue(field: DetectedField, fieldId: string): void {
+  const presetValue = coerceFieldValueForField(field, state.preset?.values[fieldId]);
+  if (presetValue !== undefined) {
+    state.values[fieldId] = presetValue;
+  } else {
+    delete state.values[fieldId];
+  }
+}
+
 function findMatchingOption(field: DetectedField, value: string): string | undefined {
   return field.options?.find((option) => optionEquals(option, value));
 }
@@ -490,12 +499,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
     if (field && profile && previousMapping) {
       const previousMappedValue = coerceFieldValueForField(field, profile.values[previousMapping]);
       if (fieldValuesEqual(state.values[fieldId], previousMappedValue)) {
-        const presetValue = state.preset?.values[fieldId];
-        if (presetValue !== undefined) {
-          state.values[fieldId] = presetValue;
-        } else {
-          delete state.values[fieldId];
-        }
+        restorePresetFieldValue(field, fieldId);
         clearDirtyField(fieldId);
       }
     }
@@ -929,6 +933,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
   const nextValues: Record<string, FieldValue> = {};
   const nextMappings: Record<string, string> = {};
   const nextUnmappedFieldIds = new Set<string>();
+  const nextAutoBrokenMappings = new Map<string, string>();
 
   for (const field of state.activeForm.fields) {
     if (state.clearedFieldIds.has(field.id)) {
@@ -952,6 +957,13 @@ function applyProfile(profileId: string | null, autosave = true): void {
       nextMappings[field.id] = mappingKey;
     } else if (hasExplicitNoMapping) {
       nextUnmappedFieldIds.add(field.id);
+    }
+
+    if (!hasExplicitNoMapping) {
+      const brokenMapping = state.autoBrokenMappings.get(field.id);
+      if (brokenMapping && brokenMapping !== mappingKey) {
+        nextAutoBrokenMappings.set(field.id, brokenMapping);
+      }
     }
 
     if (state.dirtyFieldIds.has(field.id) && hasStoredFieldValue(previousValues, field.id)) {
@@ -986,6 +998,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
   state.values = nextValues;
   state.mappings = nextMappings;
   state.unmappedFieldIds = nextUnmappedFieldIds;
+  state.autoBrokenMappings = nextAutoBrokenMappings;
   renderProfileSelect();
   renderPresetActions();
   renderFields();

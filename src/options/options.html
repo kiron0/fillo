@@ -30,15 +30,15 @@
           <div class="settings-toggles">
             <label class="toggle">
               <input type="checkbox" id="auto-load-profile" />
-              <span>Auto-load matching profile values</span>
+              <span>Automatically apply matching profile details</span>
             </label>
             <label class="toggle">
               <input type="checkbox" id="confirm-before-fill" />
-              <span>Confirm before filling</span>
+              <span>Ask before filling a form</span>
             </label>
             <label class="toggle">
               <input type="checkbox" id="show-backup-section" />
-              <span>I need backup tools on this page</span>
+              <span>Show backup and restore tools</span>
             </label>
           </div>
         </div>
@@ -61,14 +61,14 @@
 
       <section id="backup-section" class="panel hidden">
         <div class="panel-head">
-          <h2>Backup</h2>
+          <h2>Backup And Restore</h2>
         </div>
         <div class="backup-actions">
-          <button id="export-data" class="button">Export data</button>
-          <button id="import-data" class="button">Import data</button>
-          <button id="clear-data" class="button danger">Clear all data</button>
+          <button id="export-data" class="button">Download backup</button>
+          <button id="import-data" class="button">Restore backup</button>
+          <button id="clear-data" class="button danger">Clear all saved data</button>
         </div>
-        <textarea id="backup-payload" rows="14" spellcheck="false" placeholder="Exported JSON will appear here. Paste a previous export to import it."></textarea>
+        <textarea id="backup-payload" rows="14" spellcheck="false" placeholder="Your backup will appear here. Paste a previous backup here to restore it."></textarea>
       </section>
     </main>
 

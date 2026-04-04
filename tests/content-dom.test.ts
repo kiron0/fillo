@@ -207,6 +207,25 @@ const ordinaryEmailCheckboxQuestionHtml = `
 </html>
 `;
 
+const dateTimeFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Schedule</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Start date *</div>
+      <input type="date" name="start_date" />
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Start time</div>
+      <input type="time" name="start_time" />
+    </div>
+  </body>
+</html>
+`;
+
 function setInteractiveRoleClicks(root: Document) {
   for (const option of root.querySelectorAll<HTMLElement>('[role="radio"], [role="checkbox"]')) {
     option.addEventListener("click", () => {
@@ -447,5 +466,25 @@ describe("content dom", () => {
       required: false,
       options: ["Record updates in the email summary", "Send immediately"],
     });
+  });
+
+  it("scans and fills date and time fields", () => {
+    document.documentElement.innerHTML = dateTimeFormHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSdatetime/viewform");
+
+    expect(scan.fields.map((field) => field.type)).toEqual(["date", "time"]);
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        start_date: "2026-04-04",
+        start_time: "09:30",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["start_date", "start_time"]);
+    expect((document.querySelector('input[name="start_date"]') as HTMLInputElement).value).toBe("2026-04-04");
+    expect((document.querySelector('input[name="start_time"]') as HTMLInputElement).value).toBe("09:30");
   });
 });

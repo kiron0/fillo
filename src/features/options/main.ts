@@ -225,7 +225,7 @@ function renderPresets(): void {
   if (!state.presets.length) {
     const empty = document.createElement("p");
     empty.className = "preset-meta";
-    empty.textContent = "No saved forms yet. Save a preset from the popup after scanning a Google Form.";
+    empty.textContent = "No saved forms yet. Forms you review in the popup will be saved automatically.";
     presetsContainer.append(empty);
     return;
   }
@@ -287,25 +287,37 @@ function syncBackupSectionVisibility(): void {
   backupSection.classList.toggle("hidden", !showBackupSectionCheckbox.checked);
 }
 
-saveSettingsButton.addEventListener("click", async () => {
+async function persistSettings(): Promise<void> {
   await saveSettings({
     defaultProfileId: defaultProfileSelect.value || null,
     autoLoadMatchingProfile: autoLoadCheckbox.checked,
     confirmBeforeFill: confirmBeforeFillCheckbox.checked,
     showBackupSection: showBackupSectionCheckbox.checked,
   });
+  state.settings = await getSettings();
+}
+
+saveSettingsButton.addEventListener("click", async () => {
+  await persistSettings();
   await refresh();
   setStatus("Saved settings.");
 });
 
-showBackupSectionCheckbox.addEventListener("change", async () => {
+defaultProfileSelect.addEventListener("change", () => {
+  void persistSettings();
+});
+
+autoLoadCheckbox.addEventListener("change", () => {
+  void persistSettings();
+});
+
+confirmBeforeFillCheckbox.addEventListener("change", () => {
+  void persistSettings();
+});
+
+showBackupSectionCheckbox.addEventListener("change", () => {
   syncBackupSectionVisibility();
-  await saveSettings({
-    defaultProfileId: defaultProfileSelect.value || null,
-    autoLoadMatchingProfile: autoLoadCheckbox.checked,
-    confirmBeforeFill: confirmBeforeFillCheckbox.checked,
-    showBackupSection: showBackupSectionCheckbox.checked,
-  });
+  void persistSettings();
 });
 
 addProfileButton.addEventListener("click", async () => {

@@ -1,6 +1,6 @@
 import { hasChromeRuntime, runtimeOpenOptionsPage, runtimeSendMessage } from "../../core/chrome-api";
 import { suggestProfileKey } from "../../core/matching";
-import { getPresetByFormKey, getProfiles, getSettings, savePreset } from "../../core/storage";
+import { deletePreset, getPresetByFormKey, getProfiles, getSettings, savePreset } from "../../core/storage";
 import type {
   ActiveFormContext,
   ActiveFormLookup,
@@ -49,11 +49,14 @@ const errorMessage = document.querySelector<HTMLParagraphElement>("#error-messag
 const profileControls = document.querySelector<HTMLDivElement>("#profile-controls")!;
 const fieldsContainer = document.querySelector<HTMLDivElement>("#fields")!;
 const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+const autosaveStatus = document.querySelector<HTMLParagraphElement>("#autosave-status")!;
+const resetPresetButton = document.querySelector<HTMLButtonElement>("#reset-preset")!;
 const fillFormButton = document.querySelector<HTMLButtonElement>("#fill-form")!;
 const clearValuesButton = document.querySelector<HTMLButtonElement>("#clear-values")!;
 const openOptionsButton = document.querySelector<HTMLButtonElement>("#open-options")!;
 
 let autosaveTimer: number | null = null;
+let autosaveStatusTimer: number | null = null;
 
 function setStatus(message: string, mode: "idle" | "error" | "success" = "idle"): void {
   if (!message) {
@@ -66,6 +69,30 @@ function setStatus(message: string, mode: "idle" | "error" | "success" = "idle")
   statusCard.textContent = message;
   statusCard.dataset.state = mode;
   statusCard.classList.remove("hidden");
+}
+
+function setAutosaveStatus(message: string, mode: "saving" | "saved" | "error" = "saved"): void {
+  if (autosaveStatusTimer !== null) {
+    window.clearTimeout(autosaveStatusTimer);
+    autosaveStatusTimer = null;
+  }
+
+  if (!message) {
+    autosaveStatus.textContent = "";
+    autosaveStatus.classList.add("hidden");
+    delete autosaveStatus.dataset.state;
+    return;
+  }
+
+  autosaveStatus.textContent = message;
+  autosaveStatus.dataset.state = mode;
+  autosaveStatus.classList.remove("hidden");
+
+  if (mode === "saved") {
+    autosaveStatusTimer = window.setTimeout(() => {
+      setAutosaveStatus("");
+    }, 1500);
+  }
 }
 
 function getSelectedProfile(): Profile | null {
@@ -88,6 +115,7 @@ function setInvalidPageState(title: string, message: string): void {
   errorMessage.textContent = message;
   errorCard.classList.remove("hidden");
   statusCard.classList.add("hidden");
+  autosaveStatus.classList.add("hidden");
   profileControls.classList.add("hidden");
   fieldsContainer.classList.add("hidden");
 }
@@ -212,9 +240,15 @@ async function persistPreset(showStatus = false): Promise<void> {
 
   await savePreset(preset);
   state.preset = preset;
+  renderPresetActions();
   if (showStatus) {
     setStatus("Preset saved locally for this form.", "success");
   }
+  setAutosaveStatus("All changes saved.", "saved");
+}
+
+function renderPresetActions(): void {
+  resetPresetButton.disabled = !state.preset;
 }
 
 function schedulePresetSave(): void {
@@ -226,9 +260,11 @@ function schedulePresetSave(): void {
     window.clearTimeout(autosaveTimer);
   }
 
+  setAutosaveStatus("Saving changes...", "saving");
   autosaveTimer = window.setTimeout(() => {
     autosaveTimer = null;
     void persistPreset().catch((error) => {
+      setAutosaveStatus("Autosave failed.", "error");
       setStatus(error instanceof Error ? error.message : "Unable to save preset", "error");
     });
   }, AUTOSAVE_DELAY_MS);
@@ -326,6 +362,14 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
 
       select.addEventListener("change", () => updateFieldValue(field.id, select.value || null));
       return select;
+    }
+    case "date":
+    case "time": {
+      const input = document.createElement("input");
+      input.type = field.type;
+      input.value = typeof value === "string" ? value : "";
+      input.addEventListener("input", () => updateFieldValue(field.id, input.value || null));
+      return input;
     }
     case "checkbox": {
       const wrapper = document.createElement("div");
@@ -534,6 +578,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
   state.values = nextValues;
   state.mappings = nextMappings;
   renderProfileSelect();
+  renderPresetActions();
   renderFields();
   if (autosave) {
     schedulePresetSave();
@@ -579,11 +624,12 @@ async function loadPopup(): Promise<void> {
 
   renderProfileSelect();
   applyProfile(state.selectedProfileId, false);
+  renderPresetActions();
 
   setStatus(
     preset
       ? "Loaded saved preset for this form. Review values before filling."
-      : "Detected a new form. Add values, save if you want, then fill manually.",
+      : "",
     "success",
   );
 }
@@ -623,8 +669,40 @@ function handleClear(): void {
   setStatus("Cleared unsaved values and mappings in the popup.", "idle");
 }
 
+async function handleResetPreset(): Promise<void> {
+  if (!state.activeForm || !state.preset) {
+    return;
+  }
+
+  if (!window.confirm("Reset the saved preset for this form?")) {
+    return;
+  }
+
+  if (autosaveTimer !== null) {
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+  }
+
+  await deletePreset(state.preset.id);
+  state.preset = null;
+  state.values = {};
+  state.mappings = {};
+  state.dirtyFieldIds.clear();
+  applyProfile(state.selectedProfileId, false);
+  renderPresetActions();
+  setAutosaveStatus("");
+  setStatus("Reset the saved preset for this form.", "success");
+}
+
 profileSelect.addEventListener("change", () => {
   applyProfile(profileSelect.value || null);
+});
+
+resetPresetButton.addEventListener("click", () => {
+  void handleResetPreset().catch((error) => {
+    setAutosaveStatus("Unable to reset preset.", "error");
+    setStatus(error instanceof Error ? error.message : "Unable to reset preset", "error");
+  });
 });
 
 fillFormButton.addEventListener("click", () => {

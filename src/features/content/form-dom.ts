@@ -393,6 +393,42 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
     };
   }
 
+  const dateInput = container.querySelector<HTMLInputElement>('input[type="date"]');
+  if (dateInput && isVisible(dateInput)) {
+    return {
+      field: {
+        id: uniqueFieldId(container, label, index),
+        label,
+        normalizedLabel: normalizeText(label),
+        type: "date",
+        required: isRequired(container, label),
+        helpText: getHelpText(container),
+        sectionTitle: getSectionTitle(container),
+      },
+      container,
+      control: dateInput,
+      type: "date",
+    };
+  }
+
+  const timeInput = container.querySelector<HTMLInputElement>('input[type="time"]');
+  if (timeInput && isVisible(timeInput)) {
+    return {
+      field: {
+        id: uniqueFieldId(container, label, index),
+        label,
+        normalizedLabel: normalizeText(label),
+        type: "time",
+        required: isRequired(container, label),
+        helpText: getHelpText(container),
+        sectionTitle: getSectionTitle(container),
+      },
+      container,
+      control: timeInput,
+      type: "time",
+    };
+  }
+
   const textarea = container.querySelector<HTMLTextAreaElement>("textarea");
   if (textarea && isVisible(textarea)) {
     return {
@@ -607,6 +643,8 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
     switch (descriptor.type) {
       case "text":
       case "textarea":
+      case "date":
+      case "time":
         success = fillTextField(descriptor.control, value);
         break;
       case "radio":

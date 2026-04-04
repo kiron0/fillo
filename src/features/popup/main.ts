@@ -1018,11 +1018,9 @@ function applyProfile(profileId: string | null, autosave = true): void {
       nextUnmappedFieldIds.add(field.id);
     }
 
-    if (!hasExplicitNoMapping) {
-      const brokenMapping = state.autoBrokenMappings.get(field.id);
-      if (brokenMapping && brokenMapping !== mappingKey) {
-        nextAutoBrokenMappings.set(field.id, brokenMapping);
-      }
+    const brokenMapping = state.autoBrokenMappings.get(field.id);
+    if (brokenMapping && brokenMapping !== mappingKey) {
+      nextAutoBrokenMappings.set(field.id, brokenMapping);
     }
 
     if (state.dirtyFieldIds.has(field.id) && hasStoredFieldValue(previousValues, field.id)) {

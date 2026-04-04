@@ -2206,6 +2206,71 @@ describe("popup", () => {
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("fullName");
   });
 
+  it("restores an auto-broken mapping after a profile switch when the value is reverted to the new mapped value", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const switchedInput = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    switchedInput.value = "Bob";
+    switchedInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("fullName");
+  });
+
   it("restores the originally broken mapping key when reverting to its value", async () => {
     const profiles: Profile[] = [
       {

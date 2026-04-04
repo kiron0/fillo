@@ -151,4 +151,49 @@ describe("options", () => {
       expect((mock.state.profiles as Profile[])[0].values.topics).toEqual(["Math", "Physics"]);
     });
   });
+
+  it("preserves unsaved edits on other profile cards when one profile is saved", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const cards = Array.from(document.querySelectorAll<HTMLElement>(".card"));
+    const secondCardNameInput = cards[1]!.querySelector<HTMLInputElement>('[data-role="profile-name"]')!;
+    secondCardNameInput.value = "Beta Draft";
+
+    const firstCardSaveButton = cards[0]!.querySelector<HTMLButtonElement>(".button.accent")!;
+    firstCardSaveButton.click();
+
+    await vi.waitFor(() => {
+      expect(secondCardNameInput.value).toBe("Beta Draft");
+    });
+  });
 });

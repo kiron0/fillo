@@ -217,6 +217,15 @@ function parseValue(raw: string, kind: string | undefined): string | number | bo
   return raw;
 }
 
+function updateProfileCardMeta(card: HTMLElement, profile: Profile): void {
+  const meta = card.querySelector<HTMLParagraphElement>(".profile-meta");
+  if (!meta) {
+    return;
+  }
+
+  meta.textContent = `${Object.keys(profile.values).length} saved value${Object.keys(profile.values).length === 1 ? "" : "s"}`;
+}
+
 async function persistProfile(card: HTMLElement, profile: Profile): Promise<void> {
   const nameInput = card.querySelector<HTMLInputElement>('[data-role="profile-name"]')!;
   const rows = Array.from(card.querySelectorAll<HTMLElement>(".value-row"));
@@ -238,7 +247,16 @@ async function persistProfile(card: HTMLElement, profile: Profile): Promise<void
   };
 
   await saveProfile(next);
-  await refresh();
+  const profileIndex = state.profiles.findIndex((item) => item.id === next.id);
+  if (profileIndex >= 0) {
+    state.profiles[profileIndex] = next;
+  }
+  profile.name = next.name;
+  profile.values = next.values;
+  profile.updatedAt = next.updatedAt;
+  nameInput.value = next.name;
+  updateProfileCardMeta(card, next);
+  renderDefaultProfileOptions();
   setStatus(`Saved profile "${next.name}".`);
 }
 

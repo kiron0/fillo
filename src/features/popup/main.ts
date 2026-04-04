@@ -402,6 +402,18 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       const selectedValues = isChoiceWithOtherValue(value) && Array.isArray(value.selected) ? value.selected : Array.isArray(value) ? value.map(String) : [];
       const selected = new Set(selectedValues);
       const otherText = isChoiceWithOtherValue(value) ? value.otherText : "";
+      const getCurrentSelectedValues = (): string[] => {
+        const current = state.values[field.id];
+        if (isChoiceWithOtherValue(current) && Array.isArray(current.selected)) {
+          return current.selected.map(String);
+        }
+
+        if (Array.isArray(current)) {
+          return current.map(String);
+        }
+
+        return selectedValues;
+      };
 
       for (const optionValue of field.options ?? []) {
         const label = document.createElement("label");
@@ -411,9 +423,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
         checkbox.type = "checkbox";
         checkbox.checked = selected.has(optionValue);
         checkbox.addEventListener("change", () => {
-          const current = state.values[field.id];
-          const existing = isChoiceWithOtherValue(current) && Array.isArray(current.selected) ? current.selected : Array.isArray(current) ? current.map(String) : [];
-          const next = new Set(existing);
+          const next = new Set(getCurrentSelectedValues());
           if (checkbox.checked) {
             next.add(optionValue);
           } else {
@@ -452,7 +462,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
         otherInput.addEventListener("input", () =>
           updateFieldValue(field.id, {
             kind: "choice_with_other",
-            selected: Array.from(selected),
+            selected: getCurrentSelectedValues(),
             otherText: otherInput.value,
           }),
         );

@@ -22,8 +22,8 @@ type StorageLock = {
 
 const STORAGE_LOCK_PREFIX = "__lock__";
 const LOCK_RETRY_MS = 25;
-const LOCK_TIMEOUT_MS = 3_000;
 const LOCK_TTL_MS = 5_000;
+const LOCK_TIMEOUT_MS = LOCK_TTL_MS + 1_000;
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {

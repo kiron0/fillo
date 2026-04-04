@@ -603,4 +603,59 @@ describe("popup", () => {
       expect((mock.state.presets as FormPreset[])[0].values.full_name).toBe("Manual Name");
     });
   });
+
+  it("keeps newer checkbox selections when editing an Other value", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Preferences",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "checkbox-form",
+      fields: [
+        {
+          id: "topics",
+          label: "Topics",
+          normalizedLabel: "topics",
+          type: "checkbox",
+          required: false,
+          options: ["Math", "Other", "Physics"],
+          otherOption: "Other",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('#fields input[type="checkbox"]'));
+    checkboxes[1]!.click();
+
+    const rerenderedCheckboxes = Array.from(document.querySelectorAll<HTMLInputElement>('#fields input[type="checkbox"]'));
+    rerenderedCheckboxes[0]!.click();
+
+    const otherInput = document.querySelector<HTMLInputElement>(".other-text-input")!;
+    otherInput.value = "Biology";
+    otherInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    const savedPreset = (mock.state.presets as FormPreset[])[0]!;
+    expect(savedPreset.values.topics).toEqual({
+      kind: "choice_with_other",
+      selected: ["Other", "Math"],
+      otherText: "Biology",
+    });
+  });
 });

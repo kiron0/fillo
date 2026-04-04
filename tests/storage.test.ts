@@ -155,4 +155,35 @@ describe("storage", () => {
     );
     expect(exported.presets).toHaveLength(2);
   });
+
+  it("waits long enough for an abandoned preset lock to expire", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+      chromeWithState.state.__lock__presets = {
+        token: "stale-lock",
+        expiresAt: Date.now() + 50,
+      };
+
+      const preset: FormPreset = {
+        id: "preset-1",
+        name: "Locked Form",
+        formKey: "locked-form",
+        formTitle: "Locked Form",
+        fields: [],
+        values: { fullName: "Toufiq Hasan" },
+        createdAt: 1,
+        updatedAt: 1,
+      };
+
+      const savePromise = savePreset(preset);
+      await vi.advanceTimersByTimeAsync(100);
+      await savePromise;
+
+      expect(await getPresetByFormKey("locked-form")).toEqual(preset);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

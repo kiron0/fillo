@@ -70,7 +70,7 @@ export function buildInitialFieldValues(
       values[field.id] = presetValue;
     }
 
-    const mappedKey = presetMappings?.[field.id] ?? suggestProfileKey(field, profile);
+    const mappedKey = profile ? (presetMappings?.[field.id] ?? suggestProfileKey(field, profile)) : null;
     if (!mappedKey) {
       continue;
     }

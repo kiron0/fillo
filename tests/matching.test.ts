@@ -50,4 +50,18 @@ describe("matching", () => {
     });
     expect(result.mappings.student).toBe("studentId");
   });
+
+  it("does not keep preset mappings when no profile is selected", () => {
+    const result = buildInitialFieldValues(
+      fields,
+      { name: "Manual Name" },
+      { student: "studentId" },
+      null,
+    );
+
+    expect(result.values).toEqual({
+      name: "Manual Name",
+    });
+    expect(result.mappings).toEqual({});
+  });
 });

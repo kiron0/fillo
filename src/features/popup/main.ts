@@ -21,6 +21,7 @@ type PopupState = {
   values: Record<string, FieldValue>;
   mappings: Record<string, string>;
   preset: FormPreset | null;
+  autoLoadMatchingProfile: boolean;
   confirmBeforeFill: boolean;
 };
 
@@ -31,6 +32,7 @@ const state: PopupState = {
   values: {},
   mappings: {},
   preset: null,
+  autoLoadMatchingProfile: true,
   confirmBeforeFill: true,
 };
 
@@ -55,6 +57,14 @@ function setStatus(message: string, mode: "idle" | "error" | "success" = "idle")
 
 function getSelectedProfile(): Profile | null {
   return state.profiles.find((profile) => profile.id === state.selectedProfileId) ?? null;
+}
+
+function normalizeSelectedProfileId(profileId: string | null): string | null {
+  if (!profileId) {
+    return null;
+  }
+
+  return state.profiles.some((profile) => profile.id === profileId) ? profileId : null;
 }
 
 function setInvalidPageState(title: string, message: string): void {
@@ -106,19 +116,38 @@ function updateFieldValue(fieldId: string, value: FieldValue): void {
   state.values[fieldId] = value;
 }
 
+function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | undefined): boolean {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
 function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValue {
   return typeof value === "object" && value !== null && "kind" in value && value.kind === "choice_with_other";
 }
 
 function updateFieldMapping(fieldId: string, value: string): void {
+  const profile = getSelectedProfile();
+  const previousMapping = state.mappings[fieldId];
+
   if (!value) {
     delete state.mappings[fieldId];
+
+    if (profile && previousMapping) {
+      const previousMappedValue = profile.values[previousMapping] as FieldValue | undefined;
+      if (fieldValuesEqual(state.values[fieldId], previousMappedValue)) {
+        const presetValue = state.preset?.values[fieldId];
+        if (presetValue !== undefined) {
+          state.values[fieldId] = presetValue;
+        } else {
+          delete state.values[fieldId];
+        }
+      }
+    }
+
     return;
   }
 
   state.mappings[fieldId] = value;
 
-  const profile = getSelectedProfile();
   if (!profile) {
     return;
   }
@@ -342,33 +371,35 @@ function renderFields(): void {
     body.className = "field-body";
     body.append(createValueControl(field, state.values[field.id] ?? null));
 
-    const mappingRow = document.createElement("label");
-    mappingRow.className = "mapping-row";
+    if (profile) {
+      const mappingRow = document.createElement("label");
+      mappingRow.className = "mapping-row";
 
-    const mappingLabel = document.createElement("span");
-    mappingLabel.textContent = "Mapped profile key";
+      const mappingLabel = document.createElement("span");
+      mappingLabel.textContent = "Mapped profile key";
 
-    const mappingSelect = document.createElement("select");
-    const noneOption = document.createElement("option");
-    noneOption.value = "";
-    noneOption.textContent = "No mapping";
-    mappingSelect.append(noneOption);
+      const mappingSelect = document.createElement("select");
+      const noneOption = document.createElement("option");
+      noneOption.value = "";
+      noneOption.textContent = "No mapping";
+      mappingSelect.append(noneOption);
 
-    for (const key of profileKeys) {
-      const option = document.createElement("option");
-      option.value = key;
-      option.textContent = key;
-      option.selected = state.mappings[field.id] === key;
-      mappingSelect.append(option);
+      for (const key of profileKeys) {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = key;
+        option.selected = state.mappings[field.id] === key;
+        mappingSelect.append(option);
+      }
+
+      mappingSelect.addEventListener("change", () => {
+        updateFieldMapping(field.id, mappingSelect.value);
+        renderFields();
+      });
+
+      mappingRow.append(mappingLabel, mappingSelect);
+      body.append(mappingRow);
     }
-
-    mappingSelect.addEventListener("change", () => {
-      updateFieldMapping(field.id, mappingSelect.value);
-      renderFields();
-    });
-
-    mappingRow.append(mappingLabel, mappingSelect);
-    body.append(mappingRow);
 
     card.append(header, body);
     fieldsContainer.append(card);
@@ -376,7 +407,7 @@ function renderFields(): void {
 }
 
 function applyProfile(profileId: string | null): void {
-  state.selectedProfileId = profileId;
+  state.selectedProfileId = normalizeSelectedProfileId(profileId);
   const profile = getSelectedProfile();
 
   if (!state.activeForm) {
@@ -404,6 +435,7 @@ async function loadPopup(): Promise<void> {
   ]);
 
   state.profiles = profiles;
+  state.autoLoadMatchingProfile = settings.autoLoadMatchingProfile;
   state.confirmBeforeFill = settings.confirmBeforeFill;
   state.activeForm = lookup.context ?? null;
 
@@ -423,7 +455,9 @@ async function loadPopup(): Promise<void> {
   const preset = await getPresetByFormKey(activeForm.formKey);
   state.preset = preset;
 
-  state.selectedProfileId = settings.defaultProfileId;
+  state.selectedProfileId = normalizeSelectedProfileId(
+    settings.autoLoadMatchingProfile ? settings.defaultProfileId : null,
+  );
 
   formTitle.textContent = activeForm.title;
   formMeta.textContent = `${activeForm.fields.length} detected field${activeForm.fields.length === 1 ? "" : "s"}`;
@@ -493,8 +527,9 @@ async function handleFill(): Promise<void> {
 
 function handleClear(): void {
   state.values = {};
+  state.mappings = {};
   renderFields();
-  setStatus("Cleared unsaved values in the popup.", "idle");
+  setStatus("Cleared unsaved values and mappings in the popup.", "idle");
 }
 
 profileSelect.addEventListener("change", () => {

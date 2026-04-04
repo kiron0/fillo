@@ -9,6 +9,7 @@ import {
   getSettings,
   importAppData,
   saveProfile,
+  savePreset,
   saveSettings,
 } from "../../core/storage";
 import type { AppSettings, FormPreset, ImportedAppData, Profile } from "../../core/types";
@@ -42,8 +43,29 @@ const state: {
   },
 };
 
+let settingsSaveQueue: Promise<void> = Promise.resolve();
+let latestSettingsRequestId = 0;
+
 function setStatus(message: string): void {
   statusNode.textContent = message;
+}
+
+function readSettingsControls(): AppSettings {
+  return {
+    defaultProfileId: defaultProfileSelect.value || null,
+    autoLoadMatchingProfile: autoLoadCheckbox.checked,
+    confirmBeforeFill: confirmBeforeFillCheckbox.checked,
+    showBackupSection: showBackupSectionCheckbox.checked,
+  };
+}
+
+function restoreSettingsControls(settings: AppSettings): void {
+  state.settings = settings;
+  renderDefaultProfileOptions();
+  autoLoadCheckbox.checked = settings.autoLoadMatchingProfile;
+  confirmBeforeFillCheckbox.checked = settings.confirmBeforeFill;
+  showBackupSectionCheckbox.checked = settings.showBackupSection;
+  backupSection.classList.toggle("hidden", !settings.showBackupSection);
 }
 
 function isImportedData(value: unknown): value is ImportedAppData {
@@ -251,9 +273,10 @@ function renderPresets(): void {
     saveButton.className = "button accent";
     saveButton.textContent = "Rename";
     saveButton.addEventListener("click", async () => {
-      await importAppData({
-        ...(await exportAppData()),
-        presets: state.presets.map((item) => (item.id === preset.id ? { ...item, name: titleInput.value.trim() || item.name } : item)),
+      await savePreset({
+        ...preset,
+        name: titleInput.value.trim() || preset.name,
+        updatedAt: Date.now(),
       });
       await refresh();
       setStatus("Updated preset name.");
@@ -301,29 +324,33 @@ function syncBackupSectionVisibility(): void {
 }
 
 async function persistSettings(): Promise<void> {
-  await saveSettings({
-    defaultProfileId: defaultProfileSelect.value || null,
-    autoLoadMatchingProfile: autoLoadCheckbox.checked,
-    confirmBeforeFill: confirmBeforeFillCheckbox.checked,
-    showBackupSection: showBackupSectionCheckbox.checked,
-  });
-  state.settings = await getSettings();
+  const settings = readSettingsControls();
+  await saveSettings(settings);
+  state.settings = settings;
 }
 
 async function persistSettingsFromControls(): Promise<void> {
-  const previousSettings = { ...state.settings };
-  try {
-    await persistSettings();
-    await refresh();
-  } catch (error) {
-    state.settings = previousSettings;
-    renderDefaultProfileOptions();
-    autoLoadCheckbox.checked = previousSettings.autoLoadMatchingProfile;
-    confirmBeforeFillCheckbox.checked = previousSettings.confirmBeforeFill;
-    showBackupSectionCheckbox.checked = previousSettings.showBackupSection;
-    backupSection.classList.toggle("hidden", !previousSettings.showBackupSection);
-    setStatus(error instanceof Error ? error.message : "Unable to save settings.");
-  }
+  const requestId = ++latestSettingsRequestId;
+  settingsSaveQueue = settingsSaveQueue
+    .catch(() => undefined)
+    .then(async () => {
+      try {
+        await persistSettings();
+        if (requestId === latestSettingsRequestId) {
+          await refresh();
+        }
+      } catch (error) {
+        if (requestId !== latestSettingsRequestId) {
+          return;
+        }
+
+        const storedSettings = await getSettings();
+        restoreSettingsControls(storedSettings);
+        setStatus(error instanceof Error ? error.message : "Unable to save settings.");
+      }
+    });
+
+  await settingsSaveQueue;
 }
 
 defaultProfileSelect.addEventListener("change", () => {

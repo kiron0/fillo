@@ -310,6 +310,58 @@ describe("popup", () => {
     expect(input.isConnected).toBe(true);
   });
 
+  it("handles mapping updates for field ids with CSS-special characters", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { email: "alice@example.com" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: 'entry.123["email"]',
+          label: "Email",
+          normalizedLabel: "email",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    expect(input.value).toBe("alice@example.com");
+
+    input.value = "manual@example.com";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
+  });
+
   it("resets only the current form preset", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",

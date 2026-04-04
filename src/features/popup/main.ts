@@ -138,7 +138,10 @@ function renderProfileSelect(): void {
 }
 
 function syncFieldMappingControl(fieldId: string): void {
-  const mappingSelect = fieldsContainer.querySelector<HTMLSelectElement>(`[data-field-id="${fieldId}"] .mapping-row select`);
+  const fieldCard = Array.from(fieldsContainer.querySelectorAll<HTMLElement>("[data-field-id]")).find(
+    (candidate) => candidate.dataset.fieldId === fieldId,
+  );
+  const mappingSelect = fieldCard?.querySelector<HTMLSelectElement>(".mapping-row select");
   if (!mappingSelect) {
     return;
   }
@@ -546,7 +549,7 @@ function buildPresetPayload(): FormPreset | null {
     name: state.preset?.name ?? state.activeForm.title,
     formTitle: state.activeForm.title,
     formUrl: state.activeForm.url,
-    fields: state.activeForm.fields,
+    fields: structuredClone(state.activeForm.fields),
     values,
     mappings: { ...state.mappings },
     ...(state.unmappedFieldIds.size ? { unmappedFieldIds: Array.from(state.unmappedFieldIds) } : {}),

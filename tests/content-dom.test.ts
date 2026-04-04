@@ -169,6 +169,44 @@ const verifiedEmailConsentHtml = `
 </html>
 `;
 
+const verifiedEmailBeforeQuestionHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Email First</title>
+  </head>
+  <body>
+    <div class="XfpsVe">
+      <div>Email *</div>
+      <div class="consent-row">
+        <div role="checkbox" aria-checked="false" aria-label="Record email"></div>
+        <span>Record toufiqhasankiron0@gmail.com as the email to be included with my response</span>
+      </div>
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Full Name *</div>
+      <input type="text" name="full_name" />
+    </div>
+  </body>
+</html>
+`;
+
+const ordinaryEmailCheckboxQuestionHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Notification Preferences</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Notification preferences</div>
+      <div role="checkbox" aria-checked="false">Record updates in the email summary</div>
+      <div role="checkbox" aria-checked="false">Send immediately</div>
+    </div>
+  </body>
+</html>
+`;
+
 function setInteractiveRoleClicks(root: Document) {
   for (const option of root.querySelectorAll<HTMLElement>('[role="radio"], [role="checkbox"]')) {
     option.addEventListener("click", () => {
@@ -372,6 +410,7 @@ describe("content dom", () => {
     setInteractiveRoleClicks(document);
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSemail/viewform");
 
+    expect(scan.fields.map((field) => field.label)).toEqual(["Email"]);
     expect(scan.fields[0]).toMatchObject({
       label: "Email",
       type: "checkbox",
@@ -389,5 +428,24 @@ describe("content dom", () => {
 
     expect(fillResult.filledFieldIds).toEqual([scan.fields[0].id]);
     expect(document.querySelector<HTMLElement>('[role="checkbox"]')?.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("keeps verified-email consent fields in document order", () => {
+    document.documentElement.innerHTML = verifiedEmailBeforeQuestionHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSemailorder/viewform");
+
+    expect(scan.fields.map((field) => field.label)).toEqual(["Email", "Full Name"]);
+  });
+
+  it("does not misclassify ordinary email-related checkbox questions as verified-email consent", () => {
+    document.documentElement.innerHTML = ordinaryEmailCheckboxQuestionHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSemailcheckbox/viewform");
+
+    expect(scan.fields[0]).toMatchObject({
+      label: "Notification preferences",
+      type: "checkbox",
+      required: false,
+      options: ["Record updates in the email summary", "Send immediately"],
+    });
   });
 });

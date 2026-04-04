@@ -1,5 +1,5 @@
 import { hasChromeRuntime, runtimeOpenOptionsPage, runtimeSendMessage } from "../../core/chrome-api";
-import { buildInitialFieldValues } from "../../core/matching";
+import { suggestProfileKey } from "../../core/matching";
 import { getPresetByFormKey, getProfiles, getSettings, savePreset } from "../../core/storage";
 import type {
   ActiveFormContext,
@@ -20,6 +20,7 @@ type PopupState = {
   selectedProfileId: string | null;
   values: Record<string, FieldValue>;
   mappings: Record<string, string>;
+  dirtyFieldIds: Set<string>;
   preset: FormPreset | null;
   autoLoadMatchingProfile: boolean;
   confirmBeforeFill: boolean;
@@ -31,10 +32,13 @@ const state: PopupState = {
   selectedProfileId: null,
   values: {},
   mappings: {},
+  dirtyFieldIds: new Set<string>(),
   preset: null,
   autoLoadMatchingProfile: true,
   confirmBeforeFill: true,
 };
+
+const AUTOSAVE_DELAY_MS = 500;
 
 const formTitle = document.querySelector<HTMLHeadingElement>("#form-title")!;
 const formMeta = document.querySelector<HTMLParagraphElement>("#form-meta")!;
@@ -45,10 +49,11 @@ const errorMessage = document.querySelector<HTMLParagraphElement>("#error-messag
 const profileControls = document.querySelector<HTMLDivElement>("#profile-controls")!;
 const fieldsContainer = document.querySelector<HTMLDivElement>("#fields")!;
 const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
-const savePresetButton = document.querySelector<HTMLButtonElement>("#save-preset")!;
 const fillFormButton = document.querySelector<HTMLButtonElement>("#fill-form")!;
 const clearValuesButton = document.querySelector<HTMLButtonElement>("#clear-values")!;
 const openOptionsButton = document.querySelector<HTMLButtonElement>("#open-options")!;
+
+let autosaveTimer: number | null = null;
 
 function setStatus(message: string, mode: "idle" | "error" | "success" = "idle"): void {
   if (!message) {
@@ -120,8 +125,12 @@ function renderProfileSelect(): void {
   }
 }
 
-function updateFieldValue(fieldId: string, value: FieldValue): void {
+function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
   state.values[fieldId] = value;
+  if (markDirty) {
+    state.dirtyFieldIds.add(fieldId);
+  }
+  schedulePresetSave();
 }
 
 function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | undefined): boolean {
@@ -130,6 +139,10 @@ function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | unde
 
 function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValue {
   return typeof value === "object" && value !== null && "kind" in value && value.kind === "choice_with_other";
+}
+
+function clearDirtyField(fieldId: string): void {
+  state.dirtyFieldIds.delete(fieldId);
 }
 
 function updateFieldMapping(fieldId: string, value: string): void {
@@ -148,9 +161,11 @@ function updateFieldMapping(fieldId: string, value: string): void {
         } else {
           delete state.values[fieldId];
         }
+        clearDirtyField(fieldId);
       }
     }
 
+    schedulePresetSave();
     return;
   }
 
@@ -163,7 +178,69 @@ function updateFieldMapping(fieldId: string, value: string): void {
   const mappedValue = profile.values[value];
   if (mappedValue !== undefined) {
     state.values[fieldId] = mappedValue;
+    clearDirtyField(fieldId);
   }
+
+  schedulePresetSave();
+}
+
+function buildPresetPayload(): FormPreset | null {
+  if (!state.activeForm) {
+    return null;
+  }
+
+  const now = Date.now();
+  return {
+    id: state.preset?.id ?? crypto.randomUUID(),
+    formKey: state.activeForm.formKey,
+    name: state.preset?.name ?? state.activeForm.title,
+    formTitle: state.activeForm.title,
+    formUrl: state.activeForm.url,
+    fields: state.activeForm.fields,
+    values: state.values,
+    mappings: state.mappings,
+    createdAt: state.preset?.createdAt ?? now,
+    updatedAt: now,
+  };
+}
+
+async function persistPreset(showStatus = false): Promise<void> {
+  const preset = buildPresetPayload();
+  if (!preset) {
+    return;
+  }
+
+  await savePreset(preset);
+  state.preset = preset;
+  if (showStatus) {
+    setStatus("Preset saved locally for this form.", "success");
+  }
+}
+
+function schedulePresetSave(): void {
+  if (!state.activeForm) {
+    return;
+  }
+
+  if (autosaveTimer !== null) {
+    window.clearTimeout(autosaveTimer);
+  }
+
+  autosaveTimer = window.setTimeout(() => {
+    autosaveTimer = null;
+    void persistPreset().catch((error) => {
+      setStatus(error instanceof Error ? error.message : "Unable to save preset", "error");
+    });
+  }, AUTOSAVE_DELAY_MS);
+}
+
+function getProfileBackedValue(profile: Profile | null, mappingKey: string | undefined): FieldValue | undefined {
+  if (!profile || !mappingKey) {
+    return undefined;
+  }
+
+  const mappedValue = profile.values[mappingKey];
+  return mappedValue !== undefined ? (mappedValue as FieldValue) : undefined;
 }
 
 function createValueControl(field: DetectedField, value: FieldValue): HTMLElement {
@@ -398,7 +475,10 @@ function renderFields(): void {
   }
 }
 
-function applyProfile(profileId: string | null): void {
+function applyProfile(profileId: string | null, autosave = true): void {
+  const previousProfile = getSelectedProfile();
+  const previousValues = { ...state.values };
+  const previousMappings = { ...state.mappings };
   state.selectedProfileId = normalizeSelectedProfileId(profileId);
   const profile = getSelectedProfile();
 
@@ -406,17 +486,58 @@ function applyProfile(profileId: string | null): void {
     return;
   }
 
-  const initial = buildInitialFieldValues(
-    state.activeForm.fields,
-    state.preset?.values ?? {},
-    state.preset?.mappings,
-    profile,
-  );
+  const presetValues = state.preset?.values ?? {};
+  const presetMappings = state.preset?.mappings ?? {};
+  const nextValues: Record<string, FieldValue> = {};
+  const nextMappings: Record<string, string> = {};
 
-  state.values = initial.values;
-  state.mappings = initial.mappings;
+  for (const field of state.activeForm.fields) {
+    const currentMapping = previousMappings[field.id];
+    const mappingKey =
+      (profile && currentMapping && profile.values[currentMapping] !== undefined ? currentMapping : undefined) ??
+      (profile && presetMappings[field.id] && profile.values[presetMappings[field.id]] !== undefined ? presetMappings[field.id] : undefined) ??
+      suggestProfileKey(field, profile);
+
+    if (mappingKey) {
+      nextMappings[field.id] = mappingKey;
+    }
+
+    if (state.dirtyFieldIds.has(field.id) && previousValues[field.id] !== undefined) {
+      nextValues[field.id] = previousValues[field.id];
+      continue;
+    }
+
+    const mappedValue = getProfileBackedValue(profile, mappingKey);
+    if (mappedValue !== undefined) {
+      nextValues[field.id] = mappedValue;
+      continue;
+    }
+
+    const presetValue = presetValues[field.id];
+    if (presetValue !== undefined) {
+      nextValues[field.id] = presetValue;
+      continue;
+    }
+
+    const previousMappedValue = getProfileBackedValue(previousProfile, currentMapping);
+    if (
+      previousValues[field.id] !== undefined &&
+      currentMapping &&
+      previousMappedValue !== undefined &&
+      !fieldValuesEqual(previousValues[field.id], previousMappedValue)
+    ) {
+      nextValues[field.id] = previousValues[field.id];
+      state.dirtyFieldIds.add(field.id);
+    }
+  }
+
+  state.values = nextValues;
+  state.mappings = nextMappings;
   renderProfileSelect();
   renderFields();
+  if (autosave) {
+    schedulePresetSave();
+  }
 }
 
 async function loadPopup(): Promise<void> {
@@ -457,33 +578,14 @@ async function loadPopup(): Promise<void> {
   profileControls.classList.remove("hidden");
 
   renderProfileSelect();
-  applyProfile(state.selectedProfileId);
+  applyProfile(state.selectedProfileId, false);
 
-  setStatus(preset ? "Loaded saved preset for this form. Review values before filling." : "", "success");
-}
-
-async function handleSavePreset(): Promise<void> {
-  if (!state.activeForm) {
-    return;
-  }
-
-  const now = Date.now();
-  const preset: FormPreset = {
-    id: state.preset?.id ?? crypto.randomUUID(),
-    formKey: state.activeForm.formKey,
-    name: state.preset?.name ?? state.activeForm.title,
-    formTitle: state.activeForm.title,
-    formUrl: state.activeForm.url,
-    fields: state.activeForm.fields,
-    values: state.values,
-    mappings: state.mappings,
-    createdAt: state.preset?.createdAt ?? now,
-    updatedAt: now,
-  };
-
-  await savePreset(preset);
-  state.preset = preset;
-  setStatus("Preset saved locally for this form.", "success");
+  setStatus(
+    preset
+      ? "Loaded saved preset for this form. Review values before filling."
+      : "Detected a new form. Add values, save if you want, then fill manually.",
+    "success",
+  );
 }
 
 async function handleFill(): Promise<void> {
@@ -515,16 +617,14 @@ async function handleFill(): Promise<void> {
 function handleClear(): void {
   state.values = {};
   state.mappings = {};
+  state.dirtyFieldIds.clear();
   renderFields();
+  schedulePresetSave();
   setStatus("Cleared unsaved values and mappings in the popup.", "idle");
 }
 
 profileSelect.addEventListener("change", () => {
   applyProfile(profileSelect.value || null);
-});
-
-savePresetButton.addEventListener("click", () => {
-  void handleSavePreset();
 });
 
 fillFormButton.addEventListener("click", () => {

@@ -101,15 +101,44 @@ function getQuestionContainers(root: Document): HTMLElement[] {
     }
   }
 
-  return candidates;
+  return candidates.sort(compareDocumentOrder);
+}
+
+function looksLikeVerifiedEmailConsentContainer(container: HTMLElement): boolean {
+  const text = rawTextContent(container);
+  const checkboxCount = Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]')).filter(isVisible).length;
+
+  return (
+    checkboxCount === 1 &&
+    !container.querySelector('[role="radio"]') &&
+    /^email\b/i.test(text) &&
+    /record\b/i.test(text) &&
+    /included with my response/i.test(text)
+  );
+}
+
+function compareDocumentOrder(left: HTMLElement, right: HTMLElement): number {
+  if (left === right) {
+    return 0;
+  }
+
+  const position = left.compareDocumentPosition(right);
+  if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+    return -1;
+  }
+
+  if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+    return 1;
+  }
+
+  return 0;
 }
 
 function findVerifiedEmailContainer(checkbox: HTMLElement): HTMLElement | null {
   let current: HTMLElement | null = checkbox;
 
   while (current) {
-    const text = rawTextContent(current);
-    if (text && /record\b/i.test(text) && /email/i.test(text)) {
+    if (looksLikeVerifiedEmailConsentContainer(current)) {
       return current;
     }
     current = current.parentElement;
@@ -168,7 +197,7 @@ function isRequired(container: HTMLElement, label: string): boolean {
 }
 
 function isVerifiedEmailConsentContainer(container: HTMLElement): boolean {
-  return Boolean(findVerifiedEmailContainer(container.querySelector<HTMLElement>('[role="checkbox"]') ?? container)) && /email/i.test(rawTextContent(container));
+  return looksLikeVerifiedEmailConsentContainer(container);
 }
 
 function getVerifiedEmailOptionLabel(container: HTMLElement): string {

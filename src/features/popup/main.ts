@@ -49,14 +49,12 @@ const errorMessage = document.querySelector<HTMLParagraphElement>("#error-messag
 const profileControls = document.querySelector<HTMLDivElement>("#profile-controls")!;
 const fieldsContainer = document.querySelector<HTMLDivElement>("#fields")!;
 const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
-const autosaveStatus = document.querySelector<HTMLParagraphElement>("#autosave-status")!;
 const resetPresetButton = document.querySelector<HTMLButtonElement>("#reset-preset")!;
 const fillFormButton = document.querySelector<HTMLButtonElement>("#fill-form")!;
 const clearValuesButton = document.querySelector<HTMLButtonElement>("#clear-values")!;
 const openOptionsButton = document.querySelector<HTMLButtonElement>("#open-options")!;
 
 let autosaveTimer: number | null = null;
-let autosaveStatusTimer: number | null = null;
 
 function setStatus(message: string, mode: "idle" | "error" | "success" = "idle"): void {
   if (!message) {
@@ -69,30 +67,6 @@ function setStatus(message: string, mode: "idle" | "error" | "success" = "idle")
   statusCard.textContent = message;
   statusCard.dataset.state = mode;
   statusCard.classList.remove("hidden");
-}
-
-function setAutosaveStatus(message: string, mode: "saving" | "saved" | "error" = "saved"): void {
-  if (autosaveStatusTimer !== null) {
-    window.clearTimeout(autosaveStatusTimer);
-    autosaveStatusTimer = null;
-  }
-
-  if (!message) {
-    autosaveStatus.textContent = "";
-    autosaveStatus.classList.add("hidden");
-    delete autosaveStatus.dataset.state;
-    return;
-  }
-
-  autosaveStatus.textContent = message;
-  autosaveStatus.dataset.state = mode;
-  autosaveStatus.classList.remove("hidden");
-
-  if (mode === "saved") {
-    autosaveStatusTimer = window.setTimeout(() => {
-      setAutosaveStatus("");
-    }, 1500);
-  }
 }
 
 function getSelectedProfile(): Profile | null {
@@ -115,7 +89,6 @@ function setInvalidPageState(title: string, message: string): void {
   errorMessage.textContent = message;
   errorCard.classList.remove("hidden");
   statusCard.classList.add("hidden");
-  autosaveStatus.classList.add("hidden");
   profileControls.classList.add("hidden");
   fieldsContainer.classList.add("hidden");
 }
@@ -244,7 +217,6 @@ async function persistPreset(showStatus = false): Promise<void> {
   if (showStatus) {
     setStatus("Preset saved locally for this form.", "success");
   }
-  setAutosaveStatus("All changes saved.", "saved");
 }
 
 function renderPresetActions(): void {
@@ -260,17 +232,15 @@ function schedulePresetSave(): void {
     window.clearTimeout(autosaveTimer);
   }
 
-  setAutosaveStatus("Saving changes...", "saving");
   autosaveTimer = window.setTimeout(() => {
     autosaveTimer = null;
     void persistPreset().catch((error) => {
-      setAutosaveStatus("Autosave failed.", "error");
       setStatus(error instanceof Error ? error.message : "Unable to save preset", "error");
     });
   }, AUTOSAVE_DELAY_MS);
 }
 
-function getProfileBackedValue(profile: Profile | null, mappingKey: string | undefined): FieldValue | undefined {
+function getProfileBackedValue(profile: Profile | null, mappingKey: string | null | undefined): FieldValue | undefined {
   if (!profile || !mappingKey) {
     return undefined;
   }
@@ -690,7 +660,6 @@ async function handleResetPreset(): Promise<void> {
   state.dirtyFieldIds.clear();
   applyProfile(state.selectedProfileId, false);
   renderPresetActions();
-  setAutosaveStatus("");
   setStatus("Reset the saved preset for this form.", "success");
 }
 
@@ -700,7 +669,6 @@ profileSelect.addEventListener("change", () => {
 
 resetPresetButton.addEventListener("click", () => {
   void handleResetPreset().catch((error) => {
-    setAutosaveStatus("Unable to reset preset.", "error");
     setStatus(error instanceof Error ? error.message : "Unable to reset preset", "error");
   });
 });

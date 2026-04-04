@@ -123,16 +123,82 @@ h3 {
 }
 
 .toggle {
-  display: flex;
-  gap: 10px;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
-  padding: 0;
+  padding: 8px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(69, 52, 36, 0.1);
+  background: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease,
+    transform 150ms ease;
 }
 
 .toggle input {
-  width: auto;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
   margin: 0;
-  flex: 0 0 auto;
+  position: relative;
+  border-radius: 4px;
+  border: 1.5px solid rgba(69, 52, 36, 0.25);
+  background: #fffefb;
+  justify-self: center;
+  align-self: center;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.toggle input::after {
+  content: "";
+  width: 8px;
+  height: 5px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-left: 2px solid white;
+  border-bottom: 2px solid white;
+  transform: translate(-50%, -58%) rotate(-45deg) scale(0);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.toggle input:checked {
+  border-color: var(--accent-strong);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 0 0 3px rgba(28, 122, 107, 0.14);
+}
+
+.toggle input:checked::after {
+  transform: translate(-50%, -58%) rotate(-45deg) scale(1);
+}
+
+.toggle input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(28, 122, 107, 0.18);
+}
+
+.toggle:has(input:checked) {
+  border-color: rgba(28, 122, 107, 0.28);
+  background: rgba(28, 122, 107, 0.08);
+}
+
+.toggle:has(input:focus-visible) {
+  border-color: rgba(28, 122, 107, 0.34);
+}
+
+.toggle span {
+  display: block;
+  line-height: 1.35;
+  padding-top: 0;
 }
 
 .stack-field {

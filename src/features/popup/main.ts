@@ -139,6 +139,7 @@ function renderProfileSelect(): void {
 
 function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
   let shouldMarkDirty = markDirty;
+  let mappingStateChanged = false;
 
   if (markDirty) {
     const field = state.activeForm?.fields.find((candidate) => candidate.id === fieldId);
@@ -154,6 +155,7 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
         state.unmappedFieldIds.add(fieldId);
         state.suppressedMappingFieldIds.add(fieldId);
         state.autoBrokenMappings.set(fieldId, currentMapping);
+        mappingStateChanged = true;
       }
     } else if (field && profile && state.autoBrokenMappings.has(fieldId)) {
       const brokenMapping = state.autoBrokenMappings.get(fieldId);
@@ -172,6 +174,7 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
           state.suppressedMappingFieldIds.delete(fieldId);
           state.autoBrokenMappings.delete(fieldId);
           shouldMarkDirty = false;
+          mappingStateChanged = true;
         }
       }
     }
@@ -185,6 +188,10 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
     clearDirtyField(fieldId);
   }
   schedulePresetSave();
+
+  if (mappingStateChanged) {
+    renderFields();
+  }
 }
 
 function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | undefined): boolean {
@@ -532,7 +539,7 @@ function buildPresetPayload(): FormPreset | null {
     formUrl: state.activeForm.url,
     fields: state.activeForm.fields,
     values,
-    mappings: state.mappings,
+    mappings: { ...state.mappings },
     ...(state.unmappedFieldIds.size ? { unmappedFieldIds: Array.from(state.unmappedFieldIds) } : {}),
     mappingSchemaVersion: 2,
     createdAt: state.preset?.createdAt ?? now,

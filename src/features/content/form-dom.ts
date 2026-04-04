@@ -687,6 +687,11 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
         if (typeof value === "string" || typeof value === "number") {
           success = Boolean(selectRadioOption(descriptor.container, String(value)));
         } else if (isChoiceWithOtherValue(value) && typeof value.selected === "string") {
+          if (referenceField.otherOption && optionEquals(referenceField.otherOption, value.selected) && !value.otherText.trim()) {
+            success = false;
+            break;
+          }
+
           const selected = String(value.selected);
           const match = selectRadioOption(descriptor.container, selected);
           success = Boolean(match);
@@ -702,6 +707,15 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
         if (Array.isArray(value)) {
           success = fillCheckboxGroup(descriptor.container, value.map(String));
         } else if (isChoiceWithOtherValue(value) && Array.isArray(value.selected)) {
+          if (
+            referenceField.otherOption &&
+            value.selected.some((item) => optionEquals(item, referenceField.otherOption as string)) &&
+            !value.otherText.trim()
+          ) {
+            success = false;
+            break;
+          }
+
           success = fillCheckboxGroup(descriptor.container, value.selected.map(String));
           if (
             success &&

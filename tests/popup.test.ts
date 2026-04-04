@@ -257,6 +257,56 @@ describe("popup", () => {
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
   });
 
+  it("updates the mapping dropdown immediately when a mapped field is manually changed", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
+  });
+
   it("resets only the current form preset", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",
@@ -1649,6 +1699,124 @@ describe("popup", () => {
     input.dispatchEvent(new Event("input", { bubbles: true }));
 
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("preferredName");
+  });
+
+  it("stores a preset mapping snapshot even if the mapping changes before the write finishes", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice", email: "alice@example.com" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    let firstWrittenPreset: FormPreset | null = null;
+    let releaseStorageWrite: (() => void) | null = null;
+    const state: Record<string, unknown> = {
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    };
+
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(Object.fromEntries(keys.map((key) => [key, state[key]])));
+          },
+          set(value: Record<string, unknown>, callback: () => void) {
+            if ("presets" in value && releaseStorageWrite === null) {
+              firstWrittenPreset = structuredClone((value.presets as FormPreset[])[0]!);
+              Object.assign(state, value);
+              releaseStorageWrite = callback;
+              return;
+            }
+
+            Object.assign(state, value);
+            callback();
+          },
+          remove(keys: string[], callback: () => void) {
+            for (const key of keys) {
+              delete state[key];
+            }
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({
+              ok: true,
+              data: {
+                status: "ready",
+                context: activeForm,
+              },
+            });
+            return;
+          }
+
+          if (message.type === "FILL_ACTIVE_FORM") {
+            callback({
+              ok: true,
+              data: {
+                filledFieldIds: [],
+                skippedFieldIds: [],
+              },
+            });
+            return;
+          }
+
+          callback({ ok: false, error: "Unknown message" });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "fullName";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    mappingSelect.value = "email";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const capturedPreset = firstWrittenPreset as FormPreset | null;
+    expect(capturedPreset?.mappings?.full_name).toBe("fullName");
+
+    const releasePendingSave = releaseStorageWrite as (() => void) | null;
+    if (releasePendingSave) {
+      releasePendingSave();
+    }
   });
 
   it("does not autosave or fill an incomplete Other selection", async () => {

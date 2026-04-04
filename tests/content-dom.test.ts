@@ -351,6 +351,29 @@ describe("content dom", () => {
     expect((document.querySelector('input[name="batch_other"]') as HTMLInputElement).value).toBe("18");
   });
 
+  it("does not clear the attached radio Other input when the payload has blank otherText", () => {
+    document.documentElement.innerHTML = radioWithOtherHtml;
+    setInteractiveRoleClicks(document);
+    (document.querySelector('input[name="batch_other"]') as HTMLInputElement).value = "17A";
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLS789/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        batch_other: {
+          kind: "choice_with_other",
+          selected: "Other",
+          otherText: "   ",
+        },
+      },
+    });
+
+    expect(fillResult.skippedFieldIds).toEqual(["batch_other"]);
+    expect((document.querySelector('input[name="batch_other"]') as HTMLInputElement).value).toBe("17A");
+    expect(document.querySelectorAll<HTMLElement>('[role="radio"]')[2].getAttribute("aria-checked")).toBe("false");
+  });
+
   it("adds a synthetic Other option when a radio choice only exposes an attached text input", () => {
     document.documentElement.innerHTML = radioWithSyntheticOtherHtml;
     const result = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLS999/viewform");
@@ -416,6 +439,29 @@ describe("content dom", () => {
     expect(fillResult.filledFieldIds).toEqual(["courses_other"]);
     expect((document.querySelector('input[name="courses_other"]') as HTMLInputElement).value).toBe("Physics");
     expect((document.querySelector('input[name="unrelated_text"]') as HTMLInputElement).value).toBe("");
+  });
+
+  it("does not clear the attached checkbox Other input when the payload has blank otherText", () => {
+    document.documentElement.innerHTML = checkboxOtherBindingHtml;
+    setInteractiveRoleClicks(document);
+    (document.querySelector('input[name="courses_other"]') as HTMLInputElement).value = "Physics";
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScheckboxblank/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        courses_other: {
+          kind: "choice_with_other",
+          selected: ["Other"],
+          otherText: "",
+        },
+      },
+    });
+
+    expect(fillResult.skippedFieldIds).toEqual(["courses_other"]);
+    expect((document.querySelector('input[name="courses_other"]') as HTMLInputElement).value).toBe("Physics");
+    expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[1].getAttribute("aria-checked")).toBe("false");
   });
 
   it("does not report success or clear existing selections when checkbox targets do not match", () => {

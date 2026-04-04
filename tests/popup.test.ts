@@ -260,4 +260,51 @@ describe("popup", () => {
 
     expect(document.querySelector<HTMLDivElement>("#status-card")!.classList.contains("hidden")).toBe(true);
   });
+
+  it("removes a preset when all saved values are cleared back to blank", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(500);
+    expect((mock.state.presets as FormPreset[])[0].values.full_name).toBe("Manual Name");
+
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([]);
+    expect(document.querySelector<HTMLButtonElement>("#reset-preset")!.disabled).toBe(true);
+  });
 });

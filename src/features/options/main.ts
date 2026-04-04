@@ -68,6 +68,22 @@ function restoreSettingsControls(settings: AppSettings): void {
   backupSection.classList.toggle("hidden", !settings.showBackupSection);
 }
 
+function getProfileValueKind(value: string | number | boolean | string[]): "string" | "number" | "boolean" | "array" {
+  if (Array.isArray(value)) {
+    return "array";
+  }
+
+  if (typeof value === "number") {
+    return "number";
+  }
+
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+
+  return "string";
+}
+
 function isImportedData(value: unknown): value is ImportedAppData {
   if (typeof value !== "object" || value === null) {
     return false;
@@ -138,6 +154,7 @@ function createProfileValueRow(key: string, value: string | number | boolean | s
   row.append(keyInput, valueInput, removeButton);
   row.dataset.key = key;
   row.dataset.value = valueInput.value;
+  row.dataset.valueKind = getProfileValueKind(value);
 
   keyInput.addEventListener("input", () => {
     row.dataset.key = keyInput.value;
@@ -150,8 +167,33 @@ function createProfileValueRow(key: string, value: string | number | boolean | s
   return row;
 }
 
-function parseValue(raw: string): string | string[] {
-  return raw.includes(",") ? raw.split(",").map((item) => item.trim()).filter(Boolean) : raw;
+function parseValue(raw: string, kind: string | undefined): string | number | boolean | string[] {
+  if (kind === "array") {
+    return raw.split(",").map((item) => item.trim()).filter(Boolean);
+  }
+
+  if (kind === "number") {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return raw;
+    }
+
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed) ? parsed : raw;
+  }
+
+  if (kind === "boolean") {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "true") {
+      return true;
+    }
+
+    if (normalized === "false") {
+      return false;
+    }
+  }
+
+  return raw;
 }
 
 async function persistProfile(card: HTMLElement, profile: Profile): Promise<void> {
@@ -164,7 +206,7 @@ async function persistProfile(card: HTMLElement, profile: Profile): Promise<void
     if (!key) {
       continue;
     }
-    values[key] = parseValue(row.dataset.value ?? "");
+    values[key] = parseValue(row.dataset.value ?? "", row.dataset.valueKind);
   }
 
   const next: Profile = {
@@ -391,7 +433,7 @@ importButton.addEventListener("click", async () => {
   try {
     const payload = JSON.parse(backupPayload.value);
     if (!isImportedData(payload)) {
-      throw new Error("Import payload must be a JSON object.");
+      throw new Error("Import payload must include profiles, presets, and settings.");
     }
 
     await importAppData(payload);

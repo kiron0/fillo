@@ -145,6 +145,30 @@ function clearDirtyField(fieldId: string): void {
   state.dirtyFieldIds.delete(fieldId);
 }
 
+function hasPersistableFieldValue(value: FieldValue | undefined): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+
+  if (isChoiceWithOtherValue(value)) {
+    if (Array.isArray(value.selected)) {
+      return value.selected.length > 0;
+    }
+
+    return String(value.selected).trim().length > 0;
+  }
+
+  return true;
+}
+
 function updateFieldMapping(fieldId: string, value: string): void {
   const profile = getSelectedProfile();
   const previousMapping = state.mappings[fieldId];
@@ -189,9 +213,12 @@ function buildPresetPayload(): FormPreset | null {
     return null;
   }
 
-  const hasValues = Object.keys(state.values).length > 0;
+  const values = Object.fromEntries(
+    Object.entries(state.values).filter(([, value]) => hasPersistableFieldValue(value)),
+  ) as Record<string, FieldValue>;
+  const hasValues = Object.keys(values).length > 0;
   const hasMappings = Object.keys(state.mappings).length > 0;
-  if (!state.preset && !hasValues && !hasMappings) {
+  if (!hasValues && !hasMappings) {
     return null;
   }
 
@@ -203,7 +230,7 @@ function buildPresetPayload(): FormPreset | null {
     formTitle: state.activeForm.title,
     formUrl: state.activeForm.url,
     fields: state.activeForm.fields,
-    values: state.values,
+    values,
     mappings: state.mappings,
     createdAt: state.preset?.createdAt ?? now,
     updatedAt: now,
@@ -213,6 +240,11 @@ function buildPresetPayload(): FormPreset | null {
 async function persistPreset(showStatus = false): Promise<void> {
   const preset = buildPresetPayload();
   if (!preset) {
+    if (state.preset) {
+      await deletePreset(state.preset.id);
+      state.preset = null;
+      renderPresetActions();
+    }
     return;
   }
 

@@ -21,6 +21,8 @@ type PopupState = {
   values: Record<string, FieldValue>;
   mappings: Record<string, string>;
   dirtyFieldIds: Set<string>;
+  clearedFieldIds: Set<string>;
+  suppressedMappingFieldIds: Set<string>;
   preset: FormPreset | null;
   autoLoadMatchingProfile: boolean;
   confirmBeforeFill: boolean;
@@ -33,6 +35,8 @@ const state: PopupState = {
   values: {},
   mappings: {},
   dirtyFieldIds: new Set<string>(),
+  clearedFieldIds: new Set<string>(),
+  suppressedMappingFieldIds: new Set<string>(),
   preset: null,
   autoLoadMatchingProfile: true,
   confirmBeforeFill: true,
@@ -127,6 +131,7 @@ function renderProfileSelect(): void {
 
 function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
   state.values[fieldId] = value;
+  state.clearedFieldIds.delete(fieldId);
   if (markDirty) {
     state.dirtyFieldIds.add(fieldId);
   }
@@ -175,6 +180,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
 
   if (!value) {
     delete state.mappings[fieldId];
+    state.suppressedMappingFieldIds.add(fieldId);
 
     if (profile && previousMapping) {
       const previousMappedValue = profile.values[previousMapping] as FieldValue | undefined;
@@ -194,6 +200,8 @@ function updateFieldMapping(fieldId: string, value: string): void {
   }
 
   state.mappings[fieldId] = value;
+  state.suppressedMappingFieldIds.delete(fieldId);
+  state.clearedFieldIds.delete(fieldId);
 
   if (!profile) {
     return;
@@ -543,11 +551,18 @@ function applyProfile(profileId: string | null, autosave = true): void {
   const nextMappings: Record<string, string> = {};
 
   for (const field of state.activeForm.fields) {
+    if (state.clearedFieldIds.has(field.id)) {
+      continue;
+    }
+
     const currentMapping = previousMappings[field.id];
+    const isMappingSuppressed = state.suppressedMappingFieldIds.has(field.id);
     const mappingKey =
-      (profile && currentMapping && profile.values[currentMapping] !== undefined ? currentMapping : undefined) ??
-      (profile && presetMappings[field.id] && profile.values[presetMappings[field.id]] !== undefined ? presetMappings[field.id] : undefined) ??
-      suggestProfileKey(field, profile);
+      isMappingSuppressed
+        ? undefined
+        : ((profile && currentMapping && profile.values[currentMapping] !== undefined ? currentMapping : undefined) ??
+          (profile && presetMappings[field.id] && profile.values[presetMappings[field.id]] !== undefined ? presetMappings[field.id] : undefined) ??
+          suggestProfileKey(field, profile));
 
     if (mappingKey) {
       nextMappings[field.id] = mappingKey;
@@ -673,6 +688,13 @@ function handleClear(): void {
     autosaveTimer = null;
   }
 
+  if (state.activeForm) {
+    state.clearedFieldIds = new Set(state.activeForm.fields.map((field) => field.id));
+    state.suppressedMappingFieldIds = new Set(state.activeForm.fields.map((field) => field.id));
+  } else {
+    state.clearedFieldIds.clear();
+    state.suppressedMappingFieldIds.clear();
+  }
   state.values = {};
   state.mappings = {};
   state.dirtyFieldIds.clear();
@@ -699,6 +721,8 @@ async function handleResetPreset(): Promise<void> {
   state.values = {};
   state.mappings = {};
   state.dirtyFieldIds.clear();
+  state.clearedFieldIds.clear();
+  state.suppressedMappingFieldIds.clear();
   applyProfile(state.selectedProfileId, false);
   renderPresetActions();
   setStatus("Reset the saved preset for this form.", "success");

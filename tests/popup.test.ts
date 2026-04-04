@@ -361,4 +361,154 @@ describe("popup", () => {
     expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
     expect(document.querySelector<HTMLButtonElement>("#reset-preset")!.disabled).toBe(false);
   });
+
+  it("does not resurrect a removed mapping when switching profiles before autosave", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Alice" },
+      mappings: { full_name: "fullName" },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [preset],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(document.querySelector(".mapping-row")).toBeTruthy();
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("Alice");
+  });
+
+  it("keeps cleared fields empty when switching profiles in the same popup session", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Saved Name" },
+      mappings: { full_name: "fullName" },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [preset],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#clear-values")!.click();
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
+    expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([preset]);
+  });
 });

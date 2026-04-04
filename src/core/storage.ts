@@ -14,6 +14,21 @@ type StorageShape = {
   [STORAGE_KEYS.settings]?: AppSettings;
 };
 
+async function readProfiles(): Promise<Profile[]> {
+  const result = await storageGet<StorageShape>([STORAGE_KEYS.profiles]);
+  return Array.isArray(result.profiles) ? result.profiles : [];
+}
+
+async function readPresets(): Promise<FormPreset[]> {
+  const result = await storageGet<StorageShape>([STORAGE_KEYS.presets]);
+  return Array.isArray(result.presets) ? result.presets : [];
+}
+
+async function readSettings(): Promise<AppSettings> {
+  const result = await storageGet<StorageShape>([STORAGE_KEYS.settings]);
+  return { ...DEFAULT_SETTINGS, ...(result.settings ?? {}) };
+}
+
 async function readAll(): Promise<Required<StorageShape>> {
   const result = await storageGet<StorageShape>(Object.values(STORAGE_KEYS));
   return {
@@ -28,69 +43,73 @@ async function writeAll(data: Required<StorageShape>): Promise<void> {
 }
 
 export async function getProfiles(): Promise<Profile[]> {
-  return (await readAll()).profiles;
+  return readProfiles();
 }
 
 export async function saveProfile(profile: Profile): Promise<void> {
-  const data = await readAll();
-  const existingIndex = data.profiles.findIndex((item) => item.id === profile.id);
+  const profiles = await readProfiles();
+  const existingIndex = profiles.findIndex((item) => item.id === profile.id);
 
   if (existingIndex >= 0) {
-    data.profiles[existingIndex] = profile;
+    profiles[existingIndex] = profile;
   } else {
-    data.profiles.push(profile);
+    profiles.push(profile);
   }
 
-  await writeAll(data);
+  await storageSet({ [STORAGE_KEYS.profiles]: profiles });
 }
 
 export async function deleteProfile(profileId: string): Promise<void> {
-  const data = await readAll();
-  data.profiles = data.profiles.filter((item) => item.id !== profileId);
-  if (data.settings.defaultProfileId === profileId) {
-    data.settings = {
-      ...data.settings,
+  const [profiles, settings] = await Promise.all([readProfiles(), readSettings()]);
+  const nextProfiles = profiles.filter((item) => item.id !== profileId);
+  const nextState: StorageShape = {
+    [STORAGE_KEYS.profiles]: nextProfiles,
+  };
+
+  if (settings.defaultProfileId === profileId) {
+    nextState[STORAGE_KEYS.settings] = {
+      ...settings,
       defaultProfileId: null,
     };
   }
-  await writeAll(data);
+
+  await storageSet(nextState);
 }
 
 export async function getPresets(): Promise<FormPreset[]> {
-  return (await readAll()).presets;
+  return readPresets();
 }
 
 export async function getPresetByFormKey(formKey: string): Promise<FormPreset | null> {
-  return (await readAll()).presets.find((item) => item.formKey === formKey) ?? null;
+  return (await readPresets()).find((item) => item.formKey === formKey) ?? null;
 }
 
 export async function savePreset(preset: FormPreset): Promise<void> {
-  const data = await readAll();
-  const existingIndex = data.presets.findIndex((item) => item.id === preset.id || item.formKey === preset.formKey);
+  const presets = await readPresets();
+  const existingIndex = presets.findIndex((item) => item.id === preset.id || item.formKey === preset.formKey);
 
   if (existingIndex >= 0) {
-    data.presets[existingIndex] = preset;
+    presets[existingIndex] = preset;
   } else {
-    data.presets.push(preset);
+    presets.push(preset);
   }
 
-  await writeAll(data);
+  await storageSet({ [STORAGE_KEYS.presets]: presets });
 }
 
 export async function deletePreset(presetId: string): Promise<void> {
-  const data = await readAll();
-  data.presets = data.presets.filter((item) => item.id !== presetId);
-  await writeAll(data);
+  const presets = await readPresets();
+  await storageSet({
+    [STORAGE_KEYS.presets]: presets.filter((item) => item.id !== presetId),
+  });
 }
 
 export async function getSettings(): Promise<AppSettings> {
-  return (await readAll()).settings;
+  return readSettings();
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
-  const data = await readAll();
-  data.settings = settings;
-  await writeAll(data);
+  await storageSet({ [STORAGE_KEYS.settings]: settings });
 }
 
 export async function clearAllData(): Promise<void> {

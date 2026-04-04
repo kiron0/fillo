@@ -276,6 +276,10 @@ function clonePreset(preset: FormPreset | null): FormPreset | null {
   return preset ? structuredClone(preset) : null;
 }
 
+function hasStoredFieldValue(values: Record<string, FieldValue>, fieldId: string): boolean {
+  return Object.prototype.hasOwnProperty.call(values, fieldId);
+}
+
 function findMatchingOption(field: DetectedField, value: string): string | undefined {
   return field.options?.find((option) => optionEquals(option, value));
 }
@@ -531,13 +535,22 @@ function buildPresetPayload(): FormPreset | null {
     return null;
   }
 
+  const activeFieldIds = new Set(state.activeForm.fields.map((field) => field.id));
   const values = Object.fromEntries(
     state.activeForm.fields
       .map((field) => [field.id, coerceFieldValueForField(field, state.values[field.id])] as const)
       .filter(([, value]) => hasPersistableFieldValue(value)),
   ) as Record<string, FieldValue>;
+  const persistedMappings = Object.fromEntries(
+    Object.entries(state.selectedProfileId ? state.mappings : (state.preset?.mappings ?? {})).filter(([fieldId]) =>
+      activeFieldIds.has(fieldId),
+    ),
+  );
+  const persistedUnmappedFieldIds = state.selectedProfileId
+    ? Array.from(state.unmappedFieldIds).filter((fieldId) => activeFieldIds.has(fieldId))
+    : [...(state.preset?.unmappedFieldIds ?? [])].filter((fieldId) => activeFieldIds.has(fieldId));
   const hasValues = Object.keys(values).length > 0;
-  const hasMappings = Object.keys(state.mappings).length > 0 || state.unmappedFieldIds.size > 0;
+  const hasMappings = Object.keys(persistedMappings).length > 0 || persistedUnmappedFieldIds.length > 0;
   if (!hasValues && !hasMappings) {
     return null;
   }
@@ -550,9 +563,9 @@ function buildPresetPayload(): FormPreset | null {
     formTitle: state.activeForm.title,
     formUrl: state.activeForm.url,
     fields: structuredClone(state.activeForm.fields),
-    values,
-    mappings: { ...state.mappings },
-    ...(state.unmappedFieldIds.size ? { unmappedFieldIds: Array.from(state.unmappedFieldIds) } : {}),
+    values: structuredClone(values),
+    mappings: persistedMappings,
+    ...(persistedUnmappedFieldIds.length ? { unmappedFieldIds: persistedUnmappedFieldIds } : {}),
     mappingSchemaVersion: 2,
     createdAt: state.preset?.createdAt ?? now,
     updatedAt: now,
@@ -937,11 +950,11 @@ function applyProfile(profileId: string | null, autosave = true): void {
 
     if (mappingKey) {
       nextMappings[field.id] = mappingKey;
-    } else if (hasExplicitNoMapping && !isMappingSuppressed) {
+    } else if (hasExplicitNoMapping) {
       nextUnmappedFieldIds.add(field.id);
     }
 
-    if (state.dirtyFieldIds.has(field.id) && previousValues[field.id] !== undefined) {
+    if (state.dirtyFieldIds.has(field.id) && hasStoredFieldValue(previousValues, field.id)) {
       nextValues[field.id] = previousValues[field.id];
       continue;
     }
@@ -960,7 +973,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
 
     const previousMappedValue = currentMapping ? coerceFieldValueForField(field, previousProfile?.values[currentMapping]) : undefined;
     if (
-      previousValues[field.id] !== undefined &&
+      hasStoredFieldValue(previousValues, field.id) &&
       currentMapping &&
       previousMappedValue !== undefined &&
       !fieldValuesEqual(previousValues[field.id], previousMappedValue)

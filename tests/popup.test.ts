@@ -761,6 +761,146 @@ describe("popup", () => {
     expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([preset]);
   });
 
+  it("keeps a cleared dropdown empty across profile switches and reopen", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { department: "CSE" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { department: "EEE" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Department Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "department-form",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "dropdown",
+          required: true,
+          options: ["CSE", "EEE"],
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const initialFieldSelect = document.querySelector<HTMLElement>('[data-field-id="department"]')!
+      .querySelectorAll<HTMLSelectElement>("select")[0]!;
+    expect(initialFieldSelect.value).toBe("CSE");
+
+    initialFieldSelect.value = "";
+    initialFieldSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const switchedFieldSelect = document.querySelector<HTMLElement>('[data-field-id="department"]')!
+      .querySelectorAll<HTMLSelectElement>("select")[0]!;
+    expect(switchedFieldSelect.value).toBe("");
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect((mock.state.presets as FormPreset[])[0]).toMatchObject({
+      unmappedFieldIds: ["department"],
+      mappingSchemaVersion: 2,
+    });
+
+    document.documentElement.innerHTML = popupHtml;
+    await loadPopupModule();
+
+    const reopenedFieldSelect = document.querySelector<HTMLElement>('[data-field-id="department"]')!
+      .querySelectorAll<HTMLSelectElement>("select")[0]!;
+    expect(reopenedFieldSelect.value).toBe("");
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
+  });
+
+  it("drops stale hidden mappings for fields that are no longer in the form", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: {},
+      mappings: { old_field: "fullName" },
+      unmappedFieldIds: ["old_field"],
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(500);
+
+    const savedPreset = (mock.state.presets as FormPreset[])[0]!;
+    expect(savedPreset.values).toEqual({ full_name: "Manual Name" });
+    expect(savedPreset.mappings ?? {}).toEqual({});
+    expect(savedPreset.unmappedFieldIds ?? []).toEqual([]);
+  });
+
   it("flushes pending autosave before filling the form", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",

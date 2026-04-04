@@ -49,6 +49,23 @@ function createStorageMock(initialState: Record<string, unknown>) {
   };
 }
 
+function createNavigatorLocksMock() {
+  let queue = Promise.resolve();
+
+  return {
+    locks: {
+      request: vi.fn(async (_name: string, callback: () => Promise<unknown>) => {
+        const run = queue.then(() => callback());
+        queue = run.then(
+          () => undefined,
+          () => undefined,
+        );
+        return run;
+      }),
+    },
+  };
+}
+
 async function loadOptionsModule() {
   vi.resetModules();
   await import("../src/features/options/main.ts");
@@ -59,6 +76,7 @@ async function loadOptionsModule() {
 describe("options", () => {
   beforeEach(() => {
     document.documentElement.innerHTML = optionsHtml;
+    vi.stubGlobal("navigator", createNavigatorLocksMock());
   });
 
   afterEach(() => {
@@ -245,6 +263,7 @@ describe("options", () => {
       expect(draftInput.value).toBe("Beta Draft");
       expect((mock.state.profiles as Profile[])).toHaveLength(3);
     });
+    expect(document.querySelector(".card .profile-meta")?.textContent).toContain("saved value");
   });
 
   it("preserves profile drafts when presets change and other profiles are deleted", async () => {

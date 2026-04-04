@@ -16,21 +16,16 @@ type StorageShape = {
 
 type StorageKeyName = keyof typeof STORAGE_KEYS;
 const STORAGE_WRITE_LOCK_NAME = "fillo-storage-write";
-let fallbackWriteQueue: Promise<void> = Promise.resolve();
 
 async function withStorageLocks<T>(names: StorageKeyName[], action: () => Promise<T>): Promise<T> {
   void names;
 
-  if (globalThis.navigator?.locks?.request) {
-    return globalThis.navigator.locks.request(STORAGE_WRITE_LOCK_NAME, async () => action());
+  const requestLock = globalThis.navigator?.locks?.request;
+  if (!requestLock) {
+    throw new Error("Web Locks API is not available in this context.");
   }
 
-  const run = fallbackWriteQueue.then(action);
-  fallbackWriteQueue = run.then(
-    () => undefined,
-    () => undefined,
-  );
-  return run;
+  return requestLock.call(globalThis.navigator.locks, STORAGE_WRITE_LOCK_NAME, async () => action());
 }
 
 async function readProfiles(): Promise<Profile[]> {

@@ -60,6 +60,7 @@ const clearValuesButton = document.querySelector<HTMLButtonElement>("#clear-valu
 const openOptionsButton = document.querySelector<HTMLButtonElement>("#open-options")!;
 
 let autosaveTimer: number | null = null;
+let presetSaveInFlight: Promise<void> | null = null;
 
 function setStatus(message: string, mode: "idle" | "error" | "success" = "idle"): void {
   if (!message) {
@@ -265,14 +266,30 @@ async function persistPreset(showStatus = false): Promise<void> {
   }
 }
 
+function runPresetPersist(showStatus = false): Promise<void> {
+  const savePromise = persistPreset(showStatus).finally(() => {
+    if (presetSaveInFlight === savePromise) {
+      presetSaveInFlight = null;
+    }
+  });
+  presetSaveInFlight = savePromise;
+  return savePromise;
+}
+
 async function flushPendingPresetSave(): Promise<void> {
-  if (autosaveTimer === null) {
-    return;
+  const hadScheduledSave = autosaveTimer !== null;
+  if (hadScheduledSave) {
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = null;
   }
 
-  window.clearTimeout(autosaveTimer);
-  autosaveTimer = null;
-  await persistPreset();
+  if (presetSaveInFlight) {
+    await presetSaveInFlight;
+  }
+
+  if (hadScheduledSave) {
+    await runPresetPersist();
+  }
 }
 
 function renderPresetActions(): void {
@@ -290,7 +307,7 @@ function schedulePresetSave(): void {
 
   autosaveTimer = window.setTimeout(() => {
     autosaveTimer = null;
-    void persistPreset().catch((error) => {
+    void runPresetPersist().catch((error) => {
       setStatus(error instanceof Error ? error.message : "Unable to save preset", "error");
     });
   }, AUTOSAVE_DELAY_MS);

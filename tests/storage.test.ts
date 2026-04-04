@@ -37,10 +37,28 @@ function createStorageMock() {
   };
 }
 
+function createNavigatorLocksMock() {
+  let queue = Promise.resolve();
+
+  return {
+    locks: {
+      request: vi.fn(async (_name: string, callback: () => Promise<unknown>) => {
+        const run = queue.then(() => callback());
+        queue = run.then(
+          () => undefined,
+          () => undefined,
+        );
+        return run;
+      }),
+    },
+  };
+}
+
 describe("storage", () => {
   beforeEach(() => {
     const mock = createStorageMock();
     vi.stubGlobal("chrome", mock);
+    vi.stubGlobal("navigator", createNavigatorLocksMock());
   });
 
   afterEach(() => {
@@ -211,5 +229,22 @@ describe("storage", () => {
 
     expect(navigatorWithLocks.locks.request).toHaveBeenCalledTimes(1);
     expect(navigatorWithLocks.locks.request).toHaveBeenCalledWith("fillo-storage-write", expect.any(Function));
+  });
+
+  it("fails clearly when the Web Locks API is unavailable", async () => {
+    vi.stubGlobal("navigator", {});
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      name: "Locked Form",
+      formKey: "locked-form",
+      formTitle: "Locked Form",
+      fields: [],
+      values: { fullName: "Toufiq Hasan" },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    await expect(savePreset(preset)).rejects.toThrow("Web Locks API is not available in this context.");
   });
 });

@@ -209,7 +209,14 @@ function renderProfiles(): void {
     const deleteButton = document.createElement("button");
     deleteButton.textContent = "Delete profile";
     deleteButton.addEventListener("click", () => {
-      void deleteProfile(profile.id).then(refresh);
+      void deleteProfile(profile.id)
+        .then(async () => {
+          await refresh();
+          setStatus(`Deleted profile "${profile.name}".`);
+        })
+        .catch((error) => {
+          setStatus(error instanceof Error ? error.message : "Unable to delete profile.");
+        });
     });
 
     actions.append(addEntryButton, saveButton, deleteButton);
@@ -255,7 +262,14 @@ function renderPresets(): void {
     const deleteButton = document.createElement("button");
     deleteButton.textContent = "Delete";
     deleteButton.addEventListener("click", () => {
-      void deletePreset(preset.id).then(refresh);
+      void deletePreset(preset.id)
+        .then(async () => {
+          await refresh();
+          setStatus(`Deleted saved form "${preset.name}".`);
+        })
+        .catch((error) => {
+          setStatus(error instanceof Error ? error.message : "Unable to delete saved form.");
+        });
     });
 
     const actions = document.createElement("div");

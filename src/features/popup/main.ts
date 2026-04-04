@@ -190,6 +190,12 @@ function buildPresetPayload(): FormPreset | null {
     return null;
   }
 
+  const hasValues = Object.keys(state.values).length > 0;
+  const hasMappings = Object.keys(state.mappings).length > 0;
+  if (!state.preset && !hasValues && !hasMappings) {
+    return null;
+  }
+
   const now = Date.now();
   return {
     id: state.preset?.id ?? crypto.randomUUID(),

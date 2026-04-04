@@ -226,7 +226,7 @@ h3 {
 
 .value-row {
   display: grid;
-  grid-template-columns: minmax(0, 180px) 1fr auto;
+  grid-template-columns: minmax(0, 180px) minmax(120px, 160px) 1fr auto;
   gap: 8px;
 }
 

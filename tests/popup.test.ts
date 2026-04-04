@@ -45,12 +45,18 @@ function createStorageMock(initialState: Record<string, unknown>) {
           get(keys: string[], callback: (result: Record<string, unknown>) => void) {
             callback(Object.fromEntries(keys.map((key) => [key, state[key]])));
           },
-          set(value: Record<string, unknown>, callback: () => void) {
-            Object.assign(state, value);
-            callback();
-          },
+        set(value: Record<string, unknown>, callback: () => void) {
+          Object.assign(state, value);
+          callback();
+        },
+        remove(keys: string[], callback: () => void) {
+          for (const key of keys) {
+            delete state[key];
+          }
+          callback();
         },
       },
+    },
       runtime: {
         sendMessage(message: { type: string; payload?: unknown }, callback: (response: unknown) => void) {
           if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
@@ -510,5 +516,91 @@ describe("popup", () => {
     expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
     expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([preset]);
+  });
+
+  it("flushes pending autosave before filling the form", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+    await vi.waitFor(() => {
+      expect((mock.state.presets as FormPreset[])[0].values.full_name).toBe("Manual Name");
+    });
+  });
+
+  it("flushes pending autosave when the popup page hides", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    window.dispatchEvent(new Event("pagehide"));
+    await vi.waitFor(() => {
+      expect((mock.state.presets as FormPreset[])[0].values.full_name).toBe("Manual Name");
+    });
   });
 });

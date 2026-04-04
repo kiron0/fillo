@@ -264,6 +264,16 @@ async function persistPreset(showStatus = false): Promise<void> {
   }
 }
 
+async function flushPendingPresetSave(): Promise<void> {
+  if (autosaveTimer === null) {
+    return;
+  }
+
+  window.clearTimeout(autosaveTimer);
+  autosaveTimer = null;
+  await persistPreset();
+}
+
 function renderPresetActions(): void {
   resetPresetButton.disabled = !state.preset;
 }
@@ -665,6 +675,8 @@ async function handleFill(): Promise<void> {
     return;
   }
 
+  await flushPendingPresetSave();
+
   const result = await sendBackgroundMessage<FillResult>({
     type: "FILL_ACTIVE_FORM",
     payload: {
@@ -739,7 +751,9 @@ resetPresetButton.addEventListener("click", () => {
 });
 
 fillFormButton.addEventListener("click", () => {
-  void handleFill();
+  void handleFill().catch((error) => {
+    setStatus(error instanceof Error ? error.message : "Unable to fill the current form.", "error");
+  });
 });
 
 clearValuesButton.addEventListener("click", handleClear);
@@ -748,6 +762,10 @@ openOptionsButton.addEventListener("click", () => {
   void runtimeOpenOptionsPage().catch((error) => {
     setStatus(error instanceof Error ? error.message : "Unable to open options page", "error");
   });
+});
+
+window.addEventListener("pagehide", () => {
+  void flushPendingPresetSave().catch(() => undefined);
 });
 
 if (!hasChromeRuntime()) {

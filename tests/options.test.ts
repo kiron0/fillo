@@ -36,6 +36,12 @@ function createStorageMock(initialState: Record<string, unknown>) {
             Object.assign(state, value);
             callback();
           },
+          remove(keys: string[], callback: () => void) {
+            for (const key of keys) {
+              delete state[key];
+            }
+            callback();
+          },
         },
       },
       runtime: {},
@@ -93,5 +99,56 @@ describe("options", () => {
     await Promise.resolve();
 
     expect((mock.state.profiles as Profile[])[0].values.location).toBe("Dhaka, Bangladesh");
+  });
+
+  it("lets new profile rows be saved as list values for checkbox mappings", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Personal",
+        values: {
+          fullName: "Toufiq Hasan",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const addFieldButton = document.querySelector<HTMLButtonElement>(".card-actions button")!;
+    addFieldButton.click();
+
+    const rows = Array.from(document.querySelectorAll<HTMLElement>(".value-row"));
+    const newRow = rows[rows.length - 1]!;
+    const keyInput = newRow.querySelector<HTMLInputElement>("input")!;
+    const typeSelect = newRow.querySelector<HTMLSelectElement>("select")!;
+    const valueInput = newRow.querySelectorAll<HTMLInputElement>("input")[1]!;
+
+    keyInput.value = "topics";
+    keyInput.dispatchEvent(new Event("input", { bubbles: true }));
+    typeSelect.value = "array";
+    typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    valueInput.value = "Math, Physics";
+    valueInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const saveButton = document.querySelector<HTMLButtonElement>(".card-actions .button.accent")!;
+    saveButton.click();
+    await vi.waitFor(() => {
+      expect((mock.state.profiles as Profile[])[0].values.topics).toEqual(["Math", "Physics"]);
+    });
   });
 });

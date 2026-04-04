@@ -144,6 +144,23 @@ function createProfileValueRow(key: string, value: string | number | boolean | s
   const keyInput = document.createElement("input");
   keyInput.value = key;
 
+  const valueKindSelect = document.createElement("select");
+  const valueKinds = [
+    { value: "string", label: "Text" },
+    { value: "array", label: "List" },
+    { value: "number", label: "Number" },
+    { value: "boolean", label: "Boolean" },
+  ] as const;
+  const initialValueKind = getProfileValueKind(value);
+
+  for (const optionConfig of valueKinds) {
+    const option = document.createElement("option");
+    option.value = optionConfig.value;
+    option.textContent = optionConfig.label;
+    option.selected = optionConfig.value === initialValueKind;
+    valueKindSelect.append(option);
+  }
+
   const valueInput = document.createElement("input");
   valueInput.value = Array.isArray(value) ? value.join(", ") : String(value);
 
@@ -151,10 +168,10 @@ function createProfileValueRow(key: string, value: string | number | boolean | s
   removeButton.textContent = "Remove";
   removeButton.addEventListener("click", onDelete);
 
-  row.append(keyInput, valueInput, removeButton);
+  row.append(keyInput, valueKindSelect, valueInput, removeButton);
   row.dataset.key = key;
   row.dataset.value = valueInput.value;
-  row.dataset.valueKind = getProfileValueKind(value);
+  row.dataset.valueKind = initialValueKind;
 
   keyInput.addEventListener("input", () => {
     row.dataset.key = keyInput.value;
@@ -162,6 +179,10 @@ function createProfileValueRow(key: string, value: string | number | boolean | s
 
   valueInput.addEventListener("input", () => {
     row.dataset.value = valueInput.value;
+  });
+
+  valueKindSelect.addEventListener("change", () => {
+    row.dataset.valueKind = valueKindSelect.value;
   });
 
   return row;

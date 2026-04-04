@@ -42,6 +42,24 @@ export function storageSet(value: Record<string, unknown>): Promise<void> {
   });
 }
 
+export function storageRemove(keys: string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (typeof chrome === "undefined" || !chrome.storage?.local) {
+      reject(new Error("chrome.storage.local is not available"));
+      return;
+    }
+
+    chrome.storage.local.remove(keys, () => {
+      const error = getLastErrorMessage();
+      if (error) {
+        reject(new Error(error));
+        return;
+      }
+      resolve();
+    });
+  });
+}
+
 export function runtimeSendMessage<T>(message: unknown): Promise<T> {
   return new Promise((resolve, reject) => {
     if (!hasChromeRuntime()) {

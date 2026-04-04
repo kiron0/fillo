@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fillo</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main class="popup-shell">
+      <header class="hero">
+        <p class="eyebrow">Fillo</p>
+        <h1 id="form-title">Review before filling</h1>
+        <p id="form-meta" class="muted">Open a Google Form to begin.</p>
+      </header>
+
+      <section id="status-card" class="status-card"></section>
+
+      <section id="error-card" class="error-card hidden" aria-live="polite">
+        <p class="error-eyebrow">Unsupported Page</p>
+        <h2 id="error-title">Open a Google Form</h2>
+        <p id="error-message" class="muted">This extension only works on `docs.google.com/forms/...` pages.</p>
+      </section>
+
+      <section id="controls" class="controls hidden">
+        <label class="select-block">
+          <span class="control-label">Profile</span>
+          <select id="profile-select" class="profile-select"></select>
+        </label>
+
+        <div class="actions" role="group" aria-label="Form actions">
+          <button id="save-preset" class="button">Save preset</button>
+          <button id="fill-form" class="button accent">Fill form</button>
+          <button id="clear-values" class="button secondary">Clear</button>
+        </div>
+      </section>
+
+      <section id="fields" class="field-list hidden"></section>
+
+      <footer class="footer">
+        <button id="open-options" class="link-button">Manage profiles and saved forms</button>
+      </footer>
+    </main>
+
+    <script type="module" src="./popup/index.js"></script>
+  </body>
+</html>

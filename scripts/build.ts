@@ -1,0 +1,76 @@
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+const distDir = join(root, "dist");
+
+const staticFiles = [
+  ["src/popup/popup.html", "popup.html"],
+  ["src/popup/popup.css", "popup.css"],
+  ["src/options/options.html", "options.html"],
+  ["src/options/options.css", "options.css"],
+] as const;
+
+const entrypoints = [
+  "src/features/background/main.ts",
+  "src/features/content/main.ts",
+  "src/features/popup/main.ts",
+  "src/features/options/main.ts",
+].map((path) => join(root, path));
+
+const manifest = {
+  manifest_version: 3,
+  name: "Fillo",
+  version: "0.1.0",
+  description: "Save reusable values and fill Google Forms without auto-submitting.",
+  permissions: ["storage", "activeTab", "scripting"],
+  host_permissions: ["https://docs.google.com/forms/*", "https://forms.gle/*"],
+  background: {
+    service_worker: "background/index.js",
+    type: "module",
+  },
+  action: {
+    default_title: "Fillo",
+    default_popup: "popup.html",
+  },
+  options_page: "options.html",
+  content_scripts: [
+    {
+      matches: ["https://docs.google.com/forms/*"],
+      js: ["content/index.js"],
+      run_at: "document_idle",
+    },
+  ],
+};
+
+await rm(distDir, { recursive: true, force: true });
+await mkdir(distDir, { recursive: true });
+
+const buildResult = await Bun.build({
+  entrypoints,
+  outdir: distDir,
+  target: "browser",
+  format: "esm",
+  naming: "[dir]/[name].[ext]",
+  sourcemap: "linked",
+  minify: false,
+});
+
+if (!buildResult.success) {
+  for (const log of buildResult.logs) {
+    console.error(log);
+  }
+  process.exit(1);
+}
+
+for (const [from, to] of staticFiles) {
+  const destination = join(distDir, to);
+  await mkdir(dirname(destination), { recursive: true });
+  const contents = await readFile(join(root, from), "utf8");
+  await writeFile(destination, contents, "utf8");
+}
+
+await writeFile(join(distDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
+
+console.log(`Built extension to ${distDir}`);

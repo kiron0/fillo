@@ -897,4 +897,244 @@ describe("popup", () => {
       expect(fillMessageSent).toBe(true);
     });
   });
+
+  it("rolls back an in-flight autosave when the popup is cleared", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    let releaseStorageWrite: (() => void) | null = null;
+    const state: Record<string, unknown> = {
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    };
+
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(Object.fromEntries(keys.map((key) => [key, state[key]])));
+          },
+          set(value: Record<string, unknown>, callback: () => void) {
+            Object.assign(state, value);
+            if ("presets" in value && releaseStorageWrite === null) {
+              releaseStorageWrite = callback;
+              return;
+            }
+            callback();
+          },
+          remove(keys: string[], callback: () => void) {
+            for (const key of keys) {
+              delete state[key];
+            }
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({
+              ok: true,
+              data: {
+                status: "ready",
+                context: activeForm,
+              },
+            });
+            return;
+          }
+
+          if (message.type === "FILL_ACTIVE_FORM") {
+            callback({
+              ok: true,
+              data: {
+                filledFieldIds: [],
+                skippedFieldIds: [],
+              },
+            });
+            return;
+          }
+
+          callback({ ok: false, error: "Unknown message" });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+    document.querySelector<HTMLButtonElement>("#clear-values")!.click();
+
+    releaseStorageWrite?.();
+    await vi.waitFor(() => {
+      expect((state.presets as FormPreset[] | undefined) ?? []).toEqual([]);
+    });
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
+    expect(document.querySelector<HTMLButtonElement>("#reset-preset")!.disabled).toBe(true);
+  });
+
+  it("does not send blank popup values to the form filler", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    let fillPayload: Record<string, unknown> | null = null;
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: { values?: Record<string, unknown> } },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        fillPayload = message.payload?.values ?? null;
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+    await vi.waitFor(() => {
+      expect(fillPayload).toEqual({});
+    });
+  });
+
+  it("ignores incompatible saved mappings for the current field type", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { topics: ["Math", "Physics"] },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: {},
+      mappings: { full_name: "topics" },
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [preset],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    expect(Array.from(mappingSelect.options).some((option) => option.value === "topics")).toBe(false);
+    expect(mappingSelect.value).toBe("");
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
+  });
 });

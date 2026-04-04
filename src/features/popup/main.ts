@@ -62,6 +62,8 @@ const openOptionsButton = document.querySelector<HTMLButtonElement>("#open-optio
 
 let autosaveTimer: number | null = null;
 let presetSaveInFlight: Promise<void> | null = null;
+let presetCommitVersion = 0;
+let pendingPresetId: string | null = null;
 
 function setStatus(message: string, mode: "idle" | "error" | "success" = "idle"): void {
   if (!message) {
@@ -177,7 +179,52 @@ function hasPersistableFieldValue(value: FieldValue | undefined): boolean {
   return true;
 }
 
+function clonePreset(preset: FormPreset | null): FormPreset | null {
+  return preset ? structuredClone(preset) : null;
+}
+
+function isProfileValueCompatible(field: DetectedField, value: Profile["values"][string] | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+
+  switch (field.type) {
+    case "checkbox":
+      return typeof value === "string" || Array.isArray(value);
+    case "date":
+    case "time":
+      return typeof value === "string";
+    case "radio":
+    case "scale":
+    case "dropdown":
+    case "text":
+    case "textarea":
+      return typeof value === "string" || typeof value === "number";
+    default:
+      return false;
+  }
+}
+
+function coerceProfileValueForField(field: DetectedField, value: Profile["values"][string] | undefined): FieldValue | undefined {
+  if (!isProfileValueCompatible(field, value)) {
+    return undefined;
+  }
+
+  if (field.type === "checkbox" && typeof value === "string") {
+    return [value];
+  }
+
+  return value as FieldValue;
+}
+
+function buildFillValues(): Record<string, FieldValue> {
+  return Object.fromEntries(
+    Object.entries(state.values).filter(([, value]) => hasPersistableFieldValue(value)),
+  ) as Record<string, FieldValue>;
+}
+
 function updateFieldMapping(fieldId: string, value: string): void {
+  const field = state.activeForm?.fields.find((candidate) => candidate.id === fieldId);
   const profile = getSelectedProfile();
   const previousMapping = state.mappings[fieldId];
 
@@ -203,20 +250,26 @@ function updateFieldMapping(fieldId: string, value: string): void {
     return;
   }
 
+  if (!field || !profile) {
+    state.mappings[fieldId] = value;
+    state.unmappedFieldIds.delete(fieldId);
+    state.suppressedMappingFieldIds.delete(fieldId);
+    state.clearedFieldIds.delete(fieldId);
+    schedulePresetSave();
+    return;
+  }
+
+  const mappedValue = coerceProfileValueForField(field, profile.values[value]);
+  if (mappedValue === undefined) {
+    return;
+  }
+
   state.mappings[fieldId] = value;
   state.unmappedFieldIds.delete(fieldId);
   state.suppressedMappingFieldIds.delete(fieldId);
   state.clearedFieldIds.delete(fieldId);
-
-  if (!profile) {
-    return;
-  }
-
-  const mappedValue = profile.values[value];
-  if (mappedValue !== undefined) {
-    state.values[fieldId] = mappedValue;
-    clearDirtyField(fieldId);
-  }
+  state.values[fieldId] = mappedValue;
+  clearDirtyField(fieldId);
 
   schedulePresetSave();
 }
@@ -253,17 +306,25 @@ function buildPresetPayload(): FormPreset | null {
 }
 
 async function persistPreset(showStatus = false): Promise<void> {
+  const commitVersion = presetCommitVersion;
   const preset = buildPresetPayload();
+  pendingPresetId = preset?.id ?? state.preset?.id ?? pendingPresetId;
   if (!preset) {
     if (state.preset) {
       await deletePreset(state.preset.id);
-      state.preset = null;
-      renderPresetActions();
+      if (commitVersion === presetCommitVersion) {
+        state.preset = null;
+        renderPresetActions();
+      }
     }
     return;
   }
 
   await savePreset(preset);
+  if (commitVersion !== presetCommitVersion) {
+    return;
+  }
+
   state.preset = preset;
   renderPresetActions();
   if (showStatus) {
@@ -515,7 +576,6 @@ function renderFields(): void {
   }
 
   const profile = getSelectedProfile();
-  const profileKeys = profile ? Object.keys(profile.values) : [];
 
   for (const field of state.activeForm.fields) {
     const card = document.createElement("article");
@@ -545,6 +605,9 @@ function renderFields(): void {
     body.append(createValueControl(field, state.values[field.id] ?? null));
 
     if (profile) {
+      const compatibleProfileKeys = Object.keys(profile.values).filter((key) =>
+        isProfileValueCompatible(field, profile.values[key]),
+      );
       const mappingRow = document.createElement("label");
       mappingRow.className = "mapping-row";
 
@@ -558,7 +621,7 @@ function renderFields(): void {
       noneOption.selected = state.unmappedFieldIds.has(field.id) || !state.mappings[field.id];
       mappingSelect.append(noneOption);
 
-      for (const key of profileKeys) {
+      for (const key of compatibleProfileKeys) {
         const option = document.createElement("option");
         option.value = key;
         option.textContent = key;
@@ -608,12 +671,13 @@ function applyProfile(profileId: string | null, autosave = true): void {
     const presetMapping = presetMappings[field.id];
     const isMappingSuppressed = state.suppressedMappingFieldIds.has(field.id);
     const hasExplicitNoMapping = previousUnmappedFieldIds.has(field.id) || presetUnmappedFieldIds.has(field.id);
+    const suggestedMapping = profile ? suggestProfileKey(field, profile) : undefined;
     const mappingKey =
       isMappingSuppressed || hasExplicitNoMapping
         ? undefined
-        : ((profile && currentMapping && profile.values[currentMapping] !== undefined ? currentMapping : undefined) ??
-          (profile && presetMapping && profile.values[presetMapping] !== undefined ? presetMapping : undefined) ??
-          suggestProfileKey(field, profile));
+        : ((profile && currentMapping && isProfileValueCompatible(field, profile.values[currentMapping]) ? currentMapping : undefined) ??
+          (profile && presetMapping && isProfileValueCompatible(field, profile.values[presetMapping]) ? presetMapping : undefined) ??
+          (profile && suggestedMapping && isProfileValueCompatible(field, profile.values[suggestedMapping]) ? suggestedMapping : undefined));
 
     if (mappingKey) {
       nextMappings[field.id] = mappingKey;
@@ -626,7 +690,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
       continue;
     }
 
-    const mappedValue = getProfileBackedValue(profile, mappingKey);
+    const mappedValue = mappingKey ? coerceProfileValueForField(field, profile?.values[mappingKey]) : undefined;
     if (mappedValue !== undefined) {
       nextValues[field.id] = mappedValue;
       continue;
@@ -725,7 +789,7 @@ async function handleFill(): Promise<void> {
     type: "FILL_ACTIVE_FORM",
     payload: {
       formKey: state.activeForm.formKey,
-      values: state.values,
+      values: buildFillValues(),
       fields: state.activeForm.fields,
     },
   });
@@ -739,9 +803,30 @@ async function handleFill(): Promise<void> {
 }
 
 function handleClear(): void {
+  const persistedPresetSnapshot = clonePreset(state.preset);
+  presetCommitVersion += 1;
+
   if (autosaveTimer !== null) {
     window.clearTimeout(autosaveTimer);
     autosaveTimer = null;
+  }
+
+  if (presetSaveInFlight) {
+    const restorePromise = presetSaveInFlight
+      .catch(() => undefined)
+      .then(async () => {
+        if (persistedPresetSnapshot) {
+          await savePreset(persistedPresetSnapshot);
+        } else if (state.preset ?? pendingPresetId) {
+          await deletePreset(state.preset?.id ?? pendingPresetId ?? "");
+        }
+      })
+      .finally(() => {
+        if (presetSaveInFlight === restorePromise) {
+          presetSaveInFlight = null;
+        }
+      });
+    presetSaveInFlight = restorePromise;
   }
 
   if (state.activeForm) {
@@ -754,7 +839,9 @@ function handleClear(): void {
   state.values = {};
   state.mappings = {};
   state.unmappedFieldIds.clear();
+  state.preset = persistedPresetSnapshot;
   state.dirtyFieldIds.clear();
+  renderPresetActions();
   renderFields();
   setStatus("Cleared current popup values and mappings.", "idle");
 }
@@ -768,12 +855,22 @@ async function handleResetPreset(): Promise<void> {
     return;
   }
 
+  presetCommitVersion += 1;
+
   if (autosaveTimer !== null) {
     window.clearTimeout(autosaveTimer);
     autosaveTimer = null;
   }
 
+  if (presetSaveInFlight) {
+    await presetSaveInFlight.catch(() => undefined);
+  }
+
   await deletePreset(state.preset.id);
+  if (pendingPresetId && pendingPresetId !== state.preset.id) {
+    await deletePreset(pendingPresetId);
+  }
+  pendingPresetId = null;
   state.preset = null;
   state.values = {};
   state.mappings = {};

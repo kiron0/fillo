@@ -653,4 +653,24 @@ describe("content dom", () => {
     expect((document.querySelector('input[name="start_date"]') as HTMLInputElement).value).toBe("2026-04-04");
     expect((document.querySelector('input[name="start_time"]') as HTMLInputElement).value).toBe("09:30");
   });
+
+  it("does not clear date and time inputs when stale payloads use invalid formats", () => {
+    document.documentElement.innerHTML = dateTimeFormHtml;
+    (document.querySelector('input[name="start_date"]') as HTMLInputElement).value = "2026-04-04";
+    (document.querySelector('input[name="start_time"]') as HTMLInputElement).value = "09:30";
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSdatetimeinvalid/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        start_date: "tomorrow",
+        start_time: "25:99",
+      },
+    });
+
+    expect(fillResult.skippedFieldIds).toEqual(["start_date", "start_time"]);
+    expect((document.querySelector('input[name="start_date"]') as HTMLInputElement).value).toBe("2026-04-04");
+    expect((document.querySelector('input[name="start_time"]') as HTMLInputElement).value).toBe("09:30");
+  });
 });

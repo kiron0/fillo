@@ -930,7 +930,8 @@ function applyProfile(profileId: string | null, autosave = true): void {
     const mappingKey =
       isMappingSuppressed || hasExplicitNoMapping
         ? undefined
-        : ((profile && currentMapping && coerceFieldValueForField(field, profile.values[currentMapping]) !== undefined ? currentMapping : undefined) ??
+        : ((!profile ? (currentMapping ?? presetMapping) : undefined) ??
+          (profile && currentMapping && coerceFieldValueForField(field, profile.values[currentMapping]) !== undefined ? currentMapping : undefined) ??
           (profile && presetMapping && coerceFieldValueForField(field, profile.values[presetMapping]) !== undefined ? presetMapping : undefined) ??
           (profile && suggestedMapping && coerceFieldValueForField(field, profile.values[suggestedMapping]) !== undefined ? suggestedMapping : undefined));
 

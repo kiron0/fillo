@@ -530,6 +530,37 @@ function fillTextField(control: HTMLElement, value: FieldValue): boolean {
   return false;
 }
 
+function isValidDateFillValue(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return false;
+  }
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function isValidTimeFillValue(value: string): boolean {
+  const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (!match) {
+    return false;
+  }
+
+  const [, hoursText, minutesText, secondsText] = match;
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  const seconds = secondsText === undefined ? 0 : Number(secondsText);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59 && seconds >= 0 && seconds <= 59;
+}
+
 function isSelected(node: HTMLElement): boolean {
   return node.getAttribute("aria-checked") === "true" || node.getAttribute("aria-selected") === "true";
 }
@@ -678,9 +709,13 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
     switch (descriptor.type) {
       case "text":
       case "textarea":
-      case "date":
-      case "time":
         success = fillTextField(descriptor.control, value);
+        break;
+      case "date":
+        success = typeof value === "string" && isValidDateFillValue(value) ? fillTextField(descriptor.control, value) : false;
+        break;
+      case "time":
+        success = typeof value === "string" && isValidTimeFillValue(value) ? fillTextField(descriptor.control, value) : false;
         break;
       case "radio":
       case "scale":

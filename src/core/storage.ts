@@ -36,12 +36,12 @@ async function runMutation<T>(
   payload: Extract<BackgroundRequest, { type: "RUN_STORAGE_MUTATION" }>["payload"],
   action: () => Promise<T>,
 ): Promise<T> {
-  const requestLock = globalThis.navigator?.locks?.request;
-  if (requestLock) {
-    return requestLock.call(globalThis.navigator.locks, STORAGE_WRITE_LOCK_NAME, async () => action());
+  const lockManager = globalThis.navigator?.locks;
+  if (lockManager) {
+    return lockManager.request(STORAGE_WRITE_LOCK_NAME, () => action());
   }
 
-  if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+  if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {
     return runBackgroundMutation<T>(payload);
   }
 

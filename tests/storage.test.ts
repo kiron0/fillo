@@ -9,7 +9,7 @@ import {
   saveProfile,
   saveSettings,
 } from "../src/core/storage";
-import type { FormPreset, Profile } from "../src/core/types";
+import type { BackgroundRequest, FormPreset, Profile } from "../src/core/types";
 
 function createStorageMock() {
   const state: Record<string, unknown> = {};
@@ -36,48 +36,24 @@ function createStorageMock() {
     },
     runtime: {
       sendMessage(
-        message: {
-          type: string;
-          payload?:
-            | { kind: "save_profile"; profile: Profile }
-            | { kind: "save_preset"; preset: FormPreset }
-            | { kind: "delete_profile"; profileId: string }
-            | { kind: "delete_preset"; presetId: string }
-            | {
-                kind: "save_settings";
-                settings: {
-                  defaultProfileId: string | null;
-                  autoLoadMatchingProfile: boolean;
-                  confirmBeforeFill: boolean;
-                  showBackupSection: boolean;
-                };
-              }
-            | { kind: "clear_all_data" }
-            | {
-                kind: "import_app_data";
-                data: {
-                  profiles?: Profile[];
-                  presets?: FormPreset[];
-                  settings?: Record<string, unknown>;
-                };
-              };
-        },
+        message: BackgroundRequest,
         callback: (response: unknown) => void,
       ) {
-        if (message.type !== "RUN_STORAGE_MUTATION" || !message.payload) {
+        if (message.type !== "RUN_STORAGE_MUTATION") {
           callback({ ok: false, error: "Unknown message" });
           return;
         }
 
+        const payload = message.payload;
         const run = queue.then(async () => {
-          switch (message.payload.kind) {
+          switch (payload.kind) {
             case "save_profile": {
               const profiles = Array.isArray(state.profiles) ? ([...state.profiles] as Profile[]) : [];
-              const existingIndex = profiles.findIndex((item) => item.id === message.payload.profile.id);
+              const existingIndex = profiles.findIndex((item) => item.id === payload.profile.id);
               if (existingIndex >= 0) {
-                profiles[existingIndex] = message.payload.profile;
+                profiles[existingIndex] = payload.profile;
               } else {
-                profiles.push(message.payload.profile);
+                profiles.push(payload.profile);
               }
               state.profiles = profiles;
               callback({ ok: true, data: null });
@@ -86,12 +62,12 @@ function createStorageMock() {
             case "save_preset": {
               const presets = Array.isArray(state.presets) ? ([...state.presets] as FormPreset[]) : [];
               const existingIndex = presets.findIndex(
-                (item) => item.id === message.payload.preset.id || item.formKey === message.payload.preset.formKey,
+                (item) => item.id === payload.preset.id || item.formKey === payload.preset.formKey,
               );
               if (existingIndex >= 0) {
-                presets[existingIndex] = message.payload.preset;
+                presets[existingIndex] = payload.preset;
               } else {
-                presets.push(message.payload.preset);
+                presets.push(payload.preset);
               }
               state.presets = presets;
               callback({ ok: true, data: null });
@@ -99,14 +75,14 @@ function createStorageMock() {
             }
             case "delete_profile": {
               const profiles = Array.isArray(state.profiles) ? ([...state.profiles] as Profile[]) : [];
-              state.profiles = profiles.filter((item) => item.id !== message.payload.profileId);
+              state.profiles = profiles.filter((item) => item.id !== payload.profileId);
               const settings = (state.settings ?? {
                 defaultProfileId: null,
                 autoLoadMatchingProfile: true,
                 confirmBeforeFill: true,
                 showBackupSection: false,
               }) as Record<string, unknown>;
-              if (settings.defaultProfileId === message.payload.profileId) {
+              if (settings.defaultProfileId === payload.profileId) {
                 state.settings = {
                   ...settings,
                   defaultProfileId: null,
@@ -117,12 +93,12 @@ function createStorageMock() {
             }
             case "delete_preset": {
               const presets = Array.isArray(state.presets) ? ([...state.presets] as FormPreset[]) : [];
-              state.presets = presets.filter((item) => item.id !== message.payload.presetId);
+              state.presets = presets.filter((item) => item.id !== payload.presetId);
               callback({ ok: true, data: null });
               return;
             }
             case "save_settings":
-              state.settings = message.payload.settings;
+              state.settings = payload.settings;
               callback({ ok: true, data: null });
               return;
             case "clear_all_data":
@@ -137,14 +113,14 @@ function createStorageMock() {
               callback({ ok: true, data: null });
               return;
             case "import_app_data":
-              state.profiles = message.payload.data.profiles ?? [];
-              state.presets = message.payload.data.presets ?? [];
+              state.profiles = payload.data.profiles ?? [];
+              state.presets = payload.data.presets ?? [];
               state.settings = {
                 defaultProfileId: null,
                 autoLoadMatchingProfile: true,
                 confirmBeforeFill: true,
                 showBackupSection: false,
-                ...(message.payload.data.settings ?? {}),
+                ...(payload.data.settings ?? {}),
               };
               callback({ ok: true, data: null });
               return;

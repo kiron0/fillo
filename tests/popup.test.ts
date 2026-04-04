@@ -110,7 +110,7 @@ function createNavigatorLocksMock() {
 
 async function loadPopupModule() {
   vi.resetModules();
-  await import("../src/features/popup/main.ts");
+  await import("../src/features/popup/main");
   await Promise.resolve();
   await Promise.resolve();
 }
@@ -892,7 +892,10 @@ describe("popup", () => {
     await Promise.resolve();
 
     expect(fillMessageSent).toBe(false);
-    releaseStorageWrite?.();
+    const releaseFillSave = releaseStorageWrite as (() => void) | null;
+    if (releaseFillSave) {
+      releaseFillSave();
+    }
     await vi.waitFor(() => {
       expect(fillMessageSent).toBe(true);
     });
@@ -991,7 +994,10 @@ describe("popup", () => {
     await vi.advanceTimersByTimeAsync(500);
     document.querySelector<HTMLButtonElement>("#clear-values")!.click();
 
-    releaseStorageWrite?.();
+    const releaseClearSave = releaseStorageWrite as (() => void) | null;
+    if (releaseClearSave) {
+      releaseClearSave();
+    }
     await vi.waitFor(() => {
       expect((state.presets as FormPreset[] | undefined) ?? []).toEqual([]);
     });

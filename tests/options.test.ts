@@ -44,7 +44,9 @@ function createStorageMock(initialState: Record<string, unknown>) {
           },
         },
       },
-      runtime: {},
+      runtime: {
+        lastError: undefined as chrome.runtime.LastError | undefined,
+      },
     },
   };
 }
@@ -68,7 +70,7 @@ function createNavigatorLocksMock() {
 
 async function loadOptionsModule() {
   vi.resetModules();
-  await import("../src/features/options/main.ts");
+  await import("../src/features/options/main");
   await Promise.resolve();
   await Promise.resolve();
 }
@@ -376,10 +378,11 @@ describe("options", () => {
       },
     });
 
+    const runtimeWithLastError = mock.chrome.runtime as { lastError?: chrome.runtime.LastError };
     mock.chrome.storage.local.set = (_value: Record<string, unknown>, callback: () => void) => {
-      mock.chrome.runtime.lastError = { message: "Disk full" } as chrome.runtime.LastError;
+      runtimeWithLastError.lastError = { message: "Disk full" } as chrome.runtime.LastError;
       callback();
-      delete mock.chrome.runtime.lastError;
+      delete runtimeWithLastError.lastError;
     };
 
     vi.stubGlobal("chrome", mock.chrome);

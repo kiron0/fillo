@@ -1,5 +1,6 @@
 import { hasChromeRuntime, runtimeOpenOptionsPage, runtimeSendMessage } from "../../core/chrome-api";
 import { suggestProfileKey } from "../../core/matching";
+import { optionEquals } from "../../core/normalization";
 import { deletePreset, getPresetByFormKey, getProfiles, getSettings, savePreset } from "../../core/storage";
 import type {
   ActiveFormContext,
@@ -183,43 +184,189 @@ function clonePreset(preset: FormPreset | null): FormPreset | null {
   return preset ? structuredClone(preset) : null;
 }
 
-function isProfileValueCompatible(field: DetectedField, value: Profile["values"][string] | undefined): boolean {
-  if (value === undefined) {
+function findMatchingOption(field: DetectedField, value: string): string | undefined {
+  return field.options?.find((option) => optionEquals(option, value));
+}
+
+function isValidDateValue(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
     return false;
+  }
+
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function isValidTimeValue(value: string): boolean {
+  const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+  if (!match) {
+    return false;
+  }
+
+  const [, hoursText, minutesText, secondsText] = match;
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  const seconds = secondsText === undefined ? 0 : Number(secondsText);
+  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59 && seconds >= 0 && seconds <= 59;
+}
+
+function normalizeCheckboxValues(
+  field: DetectedField,
+  values: string[],
+  otherTextOverride?: string,
+): FieldValue | undefined {
+  const selected: string[] = [];
+  const unmatched: string[] = [];
+  let otherSelected = false;
+
+  for (const rawValue of values) {
+    const trimmedValue = rawValue.trim();
+    if (!trimmedValue) {
+      continue;
+    }
+
+    if (field.otherOption && optionEquals(trimmedValue, field.otherOption)) {
+      if (!selected.some((value) => optionEquals(value, field.otherOption as string))) {
+        selected.push(field.otherOption);
+      }
+      otherSelected = true;
+      continue;
+    }
+
+    const matchedOption = findMatchingOption(field, trimmedValue);
+    if (matchedOption) {
+      if (!selected.some((value) => optionEquals(value, matchedOption))) {
+        selected.push(matchedOption);
+      }
+      continue;
+    }
+
+    unmatched.push(trimmedValue);
+  }
+
+  if (unmatched.length > 1) {
+    return undefined;
+  }
+
+  if (unmatched.length === 1) {
+    if (!field.otherOption) {
+      return undefined;
+    }
+
+    if (!selected.some((value) => optionEquals(value, field.otherOption as string))) {
+      selected.push(field.otherOption);
+    }
+
+    return {
+      kind: "choice_with_other",
+      selected,
+      otherText: unmatched[0],
+    };
+  }
+
+  if (otherSelected) {
+    return {
+      kind: "choice_with_other",
+      selected,
+      otherText: otherTextOverride ?? "",
+    };
+  }
+
+  return selected.length > 0 ? selected : undefined;
+}
+
+function coerceFieldValueForField(field: DetectedField, value: FieldValue | Profile["values"][string] | undefined): FieldValue | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
   }
 
   switch (field.type) {
     case "checkbox":
-      return typeof value === "string" || Array.isArray(value);
+      if (isChoiceWithOtherValue(value)) {
+        return Array.isArray(value.selected)
+          ? normalizeCheckboxValues(field, value.selected.map(String), value.otherText)
+          : undefined;
+      }
+
+      if (typeof value === "string") {
+        return normalizeCheckboxValues(field, [value]);
+      }
+
+      if (Array.isArray(value)) {
+        return normalizeCheckboxValues(field, value.map(String));
+      }
+
+      return undefined;
     case "date":
+      return typeof value === "string" && isValidDateValue(value) ? value : undefined;
     case "time":
-      return typeof value === "string";
+      return typeof value === "string" && isValidTimeValue(value) ? value : undefined;
     case "radio":
     case "scale":
-    case "dropdown":
+    case "dropdown": {
+      if (isChoiceWithOtherValue(value)) {
+        if (field.type === "dropdown" || typeof value.selected !== "string") {
+          return undefined;
+        }
+
+        if (field.otherOption && optionEquals(value.selected, field.otherOption)) {
+          return {
+            kind: "choice_with_other",
+            selected: field.otherOption,
+            otherText: value.otherText,
+          };
+        }
+
+        const matchedOption = findMatchingOption(field, String(value.selected));
+        return matchedOption;
+      }
+
+      if (typeof value !== "string" && typeof value !== "number") {
+        return undefined;
+      }
+
+      const normalizedValue = String(value);
+      const matchedOption = findMatchingOption(field, normalizedValue);
+      if (matchedOption) {
+        return matchedOption;
+      }
+
+      if ((field.type === "radio" || field.type === "scale") && field.otherOption) {
+        return {
+          kind: "choice_with_other",
+          selected: field.otherOption,
+          otherText: normalizedValue,
+        };
+      }
+
+      return undefined;
+    }
     case "text":
     case "textarea":
-      return typeof value === "string" || typeof value === "number";
+      return typeof value === "string" || typeof value === "number" ? value : undefined;
     default:
-      return false;
+      return undefined;
   }
-}
-
-function coerceProfileValueForField(field: DetectedField, value: Profile["values"][string] | undefined): FieldValue | undefined {
-  if (!isProfileValueCompatible(field, value)) {
-    return undefined;
-  }
-
-  if (field.type === "checkbox" && typeof value === "string") {
-    return [value];
-  }
-
-  return value as FieldValue;
 }
 
 function buildFillValues(): Record<string, FieldValue> {
+  if (!state.activeForm) {
+    return {};
+  }
+
   return Object.fromEntries(
-    Object.entries(state.values).filter(([, value]) => hasPersistableFieldValue(value)),
+    state.activeForm.fields
+      .map((field) => [field.id, coerceFieldValueForField(field, state.values[field.id])] as const)
+      .filter(([, value]) => hasPersistableFieldValue(value)),
   ) as Record<string, FieldValue>;
 }
 
@@ -233,8 +380,8 @@ function updateFieldMapping(fieldId: string, value: string): void {
     state.unmappedFieldIds.add(fieldId);
     state.suppressedMappingFieldIds.add(fieldId);
 
-    if (profile && previousMapping) {
-      const previousMappedValue = profile.values[previousMapping] as FieldValue | undefined;
+    if (field && profile && previousMapping) {
+      const previousMappedValue = coerceFieldValueForField(field, profile.values[previousMapping]);
       if (fieldValuesEqual(state.values[fieldId], previousMappedValue)) {
         const presetValue = state.preset?.values[fieldId];
         if (presetValue !== undefined) {
@@ -259,7 +406,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
     return;
   }
 
-  const mappedValue = coerceProfileValueForField(field, profile.values[value]);
+  const mappedValue = coerceFieldValueForField(field, profile.values[value]);
   if (mappedValue === undefined) {
     return;
   }
@@ -379,15 +526,6 @@ function schedulePresetSave(): void {
       setStatus(error instanceof Error ? error.message : "Unable to save preset", "error");
     });
   }, AUTOSAVE_DELAY_MS);
-}
-
-function getProfileBackedValue(profile: Profile | null, mappingKey: string | null | undefined): FieldValue | undefined {
-  if (!profile || !mappingKey) {
-    return undefined;
-  }
-
-  const mappedValue = profile.values[mappingKey];
-  return mappedValue !== undefined ? (mappedValue as FieldValue) : undefined;
 }
 
 function createValueControl(field: DetectedField, value: FieldValue): HTMLElement {
@@ -606,7 +744,7 @@ function renderFields(): void {
 
     if (profile) {
       const compatibleProfileKeys = Object.keys(profile.values).filter((key) =>
-        isProfileValueCompatible(field, profile.values[key]),
+        coerceFieldValueForField(field, profile.values[key]) !== undefined,
       );
       const mappingRow = document.createElement("label");
       mappingRow.className = "mapping-row";
@@ -675,9 +813,9 @@ function applyProfile(profileId: string | null, autosave = true): void {
     const mappingKey =
       isMappingSuppressed || hasExplicitNoMapping
         ? undefined
-        : ((profile && currentMapping && isProfileValueCompatible(field, profile.values[currentMapping]) ? currentMapping : undefined) ??
-          (profile && presetMapping && isProfileValueCompatible(field, profile.values[presetMapping]) ? presetMapping : undefined) ??
-          (profile && suggestedMapping && isProfileValueCompatible(field, profile.values[suggestedMapping]) ? suggestedMapping : undefined));
+        : ((profile && currentMapping && coerceFieldValueForField(field, profile.values[currentMapping]) !== undefined ? currentMapping : undefined) ??
+          (profile && presetMapping && coerceFieldValueForField(field, profile.values[presetMapping]) !== undefined ? presetMapping : undefined) ??
+          (profile && suggestedMapping && coerceFieldValueForField(field, profile.values[suggestedMapping]) !== undefined ? suggestedMapping : undefined));
 
     if (mappingKey) {
       nextMappings[field.id] = mappingKey;
@@ -690,19 +828,19 @@ function applyProfile(profileId: string | null, autosave = true): void {
       continue;
     }
 
-    const mappedValue = mappingKey ? coerceProfileValueForField(field, profile?.values[mappingKey]) : undefined;
+    const mappedValue = mappingKey ? coerceFieldValueForField(field, profile?.values[mappingKey]) : undefined;
     if (mappedValue !== undefined) {
       nextValues[field.id] = mappedValue;
       continue;
     }
 
-    const presetValue = presetValues[field.id];
+    const presetValue = coerceFieldValueForField(field, presetValues[field.id]);
     if (presetValue !== undefined) {
       nextValues[field.id] = presetValue;
       continue;
     }
 
-    const previousMappedValue = getProfileBackedValue(previousProfile, currentMapping);
+    const previousMappedValue = currentMapping ? coerceFieldValueForField(field, previousProfile?.values[currentMapping]) : undefined;
     if (
       previousValues[field.id] !== undefined &&
       currentMapping &&

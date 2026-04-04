@@ -1137,4 +1137,158 @@ describe("popup", () => {
     expect(mappingSelect.value).toBe("");
     expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
   });
+
+  it("ignores incompatible preset values for the current field type", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: ["Math", "Physics"] },
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
+  });
+
+  it("maps unmatched checkbox profile values through the Other option", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { topicPreference: "Biology" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Preferences",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "checkbox-other-form",
+      fields: [
+        {
+          id: "topics",
+          label: "Topics",
+          normalizedLabel: "topics",
+          type: "checkbox",
+          required: false,
+          options: ["Math", "Other"],
+          otherOption: "Other",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "topicPreference";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('#fields input[type="checkbox"]'));
+    expect(checkboxes[1]!.checked).toBe(true);
+    expect(document.querySelector<HTMLInputElement>(".other-text-input")!.value).toBe("Biology");
+  });
+
+  it("does not offer invalid date values as mappable profile keys", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: {
+          invalidBirthday: "tomorrow",
+          validBirthday: "2026-04-05",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "date-form",
+      fields: [
+        {
+          id: "birthday",
+          label: "Birthday",
+          normalizedLabel: "birthday",
+          type: "date",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    expect(Array.from(mappingSelect.options).some((option) => option.value === "invalidBirthday")).toBe(false);
+    expect(Array.from(mappingSelect.options).some((option) => option.value === "validBirthday")).toBe(true);
+  });
 });

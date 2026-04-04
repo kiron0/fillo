@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -10,6 +10,8 @@ const staticFiles = [
   ["src/popup/popup.css", "popup.css"],
   ["src/options/options.html", "options.html"],
   ["src/options/options.css", "options.css"],
+  ["src/assets/fonts/space-grotesk-variable.woff2", "fonts/space-grotesk-variable.woff2"],
+  ["src/assets/fonts/OFL.txt", "fonts/OFL.txt"],
 ] as const;
 
 const runtimeEntrypoints = [
@@ -74,8 +76,7 @@ if (!buildResult.success) {
 for (const [from, to] of staticFiles) {
   const destination = join(distDir, to);
   await mkdir(dirname(destination), { recursive: true });
-  const contents = await readFile(join(root, from), "utf8");
-  await writeFile(destination, contents, "utf8");
+  await copyFile(join(root, from), destination);
 }
 
 for (const [folder, sourceName, targetName] of runtimeEntrypoints) {

@@ -1,3 +1,13 @@
+@font-face {
+  font-family: "Space Grotesk";
+  src:
+    url("./fonts/space-grotesk-variable.woff2") format("woff2-variations"),
+    url("./fonts/space-grotesk-variable.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg: #efe8d9;
   --panel: rgba(255, 253, 248, 0.95);
@@ -9,7 +19,7 @@
   --accent-soft: rgba(28, 122, 107, 0.12);
   --danger: #8f3131;
   --shadow: 0 25px 60px rgba(41, 29, 18, 0.12);
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-family: "Space Grotesk", sans-serif;
   color: var(--text);
 }
 
@@ -20,6 +30,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  font-family: "Space Grotesk", sans-serif;
   background:
     radial-gradient(circle at top right, rgba(148, 224, 197, 0.38), transparent 30%),
     linear-gradient(180deg, #f6efe2 0%, #e7dcc7 100%);
@@ -165,6 +176,7 @@ input,
 select,
 textarea {
   font: inherit;
+  font-family: "Space Grotesk", sans-serif;
   min-width: 0;
 }
 

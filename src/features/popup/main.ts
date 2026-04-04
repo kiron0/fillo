@@ -42,7 +42,7 @@ const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
 const errorCard = document.querySelector<HTMLDivElement>("#error-card")!;
 const errorTitle = document.querySelector<HTMLHeadingElement>("#error-title")!;
 const errorMessage = document.querySelector<HTMLParagraphElement>("#error-message")!;
-const controls = document.querySelector<HTMLDivElement>("#controls")!;
+const profileControls = document.querySelector<HTMLDivElement>("#profile-controls")!;
 const fieldsContainer = document.querySelector<HTMLDivElement>("#fields")!;
 const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
 const savePresetButton = document.querySelector<HTMLButtonElement>("#save-preset")!;
@@ -51,8 +51,16 @@ const clearValuesButton = document.querySelector<HTMLButtonElement>("#clear-valu
 const openOptionsButton = document.querySelector<HTMLButtonElement>("#open-options")!;
 
 function setStatus(message: string, mode: "idle" | "error" | "success" = "idle"): void {
+  if (!message) {
+    statusCard.textContent = "";
+    statusCard.classList.add("hidden");
+    delete statusCard.dataset.state;
+    return;
+  }
+
   statusCard.textContent = message;
   statusCard.dataset.state = mode;
+  statusCard.classList.remove("hidden");
 }
 
 function getSelectedProfile(): Profile | null {
@@ -75,7 +83,7 @@ function setInvalidPageState(title: string, message: string): void {
   errorMessage.textContent = message;
   errorCard.classList.remove("hidden");
   statusCard.classList.add("hidden");
-  controls.classList.add("hidden");
+  profileControls.classList.add("hidden");
   fieldsContainer.classList.add("hidden");
 }
 
@@ -349,23 +357,7 @@ function renderFields(): void {
       label.append(requiredMark);
     }
 
-    const meta = document.createElement("div");
-    meta.className = "field-meta";
-
-    const typeBadge = document.createElement("span");
-    typeBadge.className = "badge";
-    typeBadge.textContent = field.type;
-
-    meta.append(typeBadge);
-
-    if (field.required) {
-      const requiredBadge = document.createElement("span");
-      requiredBadge.className = "badge required";
-      requiredBadge.textContent = "Required";
-      meta.append(requiredBadge);
-    }
-
-    header.append(label, meta);
+    header.append(label);
 
     const body = document.createElement("div");
     body.className = "field-body";
@@ -461,18 +453,13 @@ async function loadPopup(): Promise<void> {
 
   formTitle.textContent = activeForm.title;
   formMeta.textContent = `${activeForm.fields.length} detected field${activeForm.fields.length === 1 ? "" : "s"}`;
-  controls.classList.remove("hidden");
   fieldsContainer.classList.remove("hidden");
+  profileControls.classList.remove("hidden");
 
   renderProfileSelect();
   applyProfile(state.selectedProfileId);
 
-  setStatus(
-    preset
-      ? `Loaded saved preset for this form. Review values before filling.`
-      : "Detected a new form. Add values, save if you want, then fill manually.",
-    "success",
-  );
+  setStatus(preset ? "Loaded saved preset for this form. Review values before filling." : "", "success");
 }
 
 async function handleSavePreset(): Promise<void> {

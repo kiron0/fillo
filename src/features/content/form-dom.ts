@@ -538,18 +538,29 @@ function selectRadioOption(container: HTMLElement, target: string): HTMLElement 
 
 function fillCheckboxGroup(container: HTMLElement, targetValues: string[]): boolean {
   const desired = new Set(targetValues.map((value) => normalizeText(value)));
-  let foundRelevantOption = false;
   const verifiedEmailOption = isVerifiedEmailConsentContainer(container) ? getVerifiedEmailOptionLabel(container) : null;
+  const options = Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]'))
+    .filter(isVisible)
+    .map((option) => {
+      const choiceLabel = getChoiceLabel(option);
+      const labelText = verifiedEmailOption ?? (choiceLabel || (hasAttachedTextControl(option, "checkbox", container) ? "Other" : ""));
 
-  for (const option of Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]')).filter(isVisible)) {
-    const labelText =
-      verifiedEmailOption ??
-      getChoiceLabel(option) ??
-      (hasAttachedTextControl(option, "checkbox", container) ? "Other" : "");
-    const label = normalizeText(labelText);
-    if (label) {
-      foundRelevantOption = true;
+      return {
+        option,
+        label: normalizeText(labelText),
+      };
+    });
+
+  const availableLabels = new Set(options.map(({ label }) => label).filter(Boolean));
+  if (desired.size > 0 && Array.from(desired).some((label) => !availableLabels.has(label))) {
+    return false;
+  }
+
+  for (const { option, label } of options) {
+    if (!label) {
+      continue;
     }
+
     const shouldBeChecked = desired.has(label);
     const currentlyChecked = isSelected(option);
     if (shouldBeChecked !== currentlyChecked) {
@@ -557,7 +568,7 @@ function fillCheckboxGroup(container: HTMLElement, targetValues: string[]): bool
     }
   }
 
-  return foundRelevantOption || targetValues.length === 0;
+  return availableLabels.size > 0 || targetValues.length === 0;
 }
 
 function fillChoiceAttachedText(

@@ -307,4 +307,58 @@ describe("popup", () => {
     expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([]);
     expect(document.querySelector<HTMLButtonElement>("#reset-preset")!.disabled).toBe(true);
   });
+
+  it("clears the popup without deleting an existing preset", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Saved Name" },
+      mappings: {},
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-2" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#clear-values")!.click();
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([preset]);
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
+    expect(document.querySelector<HTMLButtonElement>("#reset-preset")!.disabled).toBe(false);
+  });
 });

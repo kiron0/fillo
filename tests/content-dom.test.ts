@@ -396,6 +396,25 @@ describe("content dom", () => {
     expect((document.querySelector('input[name="unrelated_text"]') as HTMLInputElement).value).toBe("");
   });
 
+  it("does not report success or clear existing selections when checkbox targets do not match", () => {
+    document.documentElement.innerHTML = formHtml;
+    setInteractiveRoleClicks(document);
+    document.querySelectorAll<HTMLElement>('[role="checkbox"]')[0].setAttribute("aria-checked", "true");
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScheckboxmissing/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        skills_3: ["Rust"],
+      },
+    });
+
+    expect(fillResult.skippedFieldIds).toEqual(["skills_3"]);
+    expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[0].getAttribute("aria-checked")).toBe("true");
+    expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[1].getAttribute("aria-checked")).toBe("false");
+  });
+
   it("fills listbox options from the scoped popup instead of unrelated global options", () => {
     document.documentElement.innerHTML = scopedListboxHtml;
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSlistbox/viewform");

@@ -607,7 +607,7 @@ async function loadPopup(): Promise<void> {
   if (lookup.status !== "ready" || !lookup.context) {
     const message =
       lookup.status === "invalid_url"
-        ? "Open a Google Form URL like `docs.google.com/forms/...` or `forms.gle/...` in the current tab."
+        ? "Open a Google Form URL like `docs.google.com/forms/...` in the current tab."
         : "No active browser tab is available for scanning.";
     setInvalidPageState("Open a Google Form", message);
     renderProfileSelect();
@@ -668,12 +668,16 @@ async function handleFill(): Promise<void> {
 }
 
 function handleClear(): void {
+  if (autosaveTimer !== null) {
+    window.clearTimeout(autosaveTimer);
+    autosaveTimer = null;
+  }
+
   state.values = {};
   state.mappings = {};
   state.dirtyFieldIds.clear();
   renderFields();
-  schedulePresetSave();
-  setStatus("Cleared values and mappings for this form.", "idle");
+  setStatus("Cleared current popup values and mappings.", "idle");
 }
 
 async function handleResetPreset(): Promise<void> {

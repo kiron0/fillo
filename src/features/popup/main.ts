@@ -560,21 +560,50 @@ function buildPresetPayload(): FormPreset | null {
   }
 
   const activeFieldIds = new Set(state.activeForm.fields.map((field) => field.id));
+  const presetValues = state.preset?.values ?? {};
+  const presetMappings = state.preset?.mappings ?? {};
+  const presetUnmappedFieldIds = new Set(state.preset?.unmappedFieldIds ?? []);
   const values = Object.fromEntries(
     state.activeForm.fields
-      .map((field) => [field.id, coerceFieldValueForField(field, state.values[field.id])] as const)
-      .filter(([, value]) => hasPersistableFieldValue(value)),
+      .map((field) => {
+        const currentValue = coerceFieldValueForField(field, state.values[field.id]);
+        if (hasPersistableFieldValue(currentValue)) {
+          return [field.id, currentValue] as const;
+        }
+
+        if (state.clearedFieldIds.has(field.id)) {
+          const presetValue = coerceFieldValueForField(field, presetValues[field.id]);
+          if (hasPersistableFieldValue(presetValue)) {
+            return [field.id, presetValue] as const;
+          }
+        }
+
+        return null;
+      })
+      .filter((entry): entry is readonly [string, FieldValue] => Boolean(entry)),
   ) as Record<string, FieldValue>;
-  const persistedMappings = Object.fromEntries(
-    Object.entries(state.selectedProfileId ? state.mappings : (state.preset?.mappings ?? {})).filter(([fieldId]) =>
-      activeFieldIds.has(fieldId),
-    ),
-  );
-  const persistedUnmappedFieldIds = state.selectedProfileId
-    ? Array.from(state.unmappedFieldIds).filter((fieldId) => activeFieldIds.has(fieldId))
-    : [...(state.preset?.unmappedFieldIds ?? [])].filter((fieldId) => activeFieldIds.has(fieldId));
+
+  const persistedMappings: Record<string, string> = {};
+  const persistedUnmappedFieldIds = new Set<string>();
+
+  for (const field of state.activeForm.fields) {
+    const currentMapping = state.selectedProfileId ? state.mappings[field.id] : undefined;
+    const preservedPresetMapping = state.clearedFieldIds.has(field.id) ? presetMappings[field.id] : undefined;
+    const mappingValue = currentMapping ?? preservedPresetMapping;
+    if (mappingValue) {
+      persistedMappings[field.id] = mappingValue;
+    }
+
+    const hasCurrentExplicitNoMapping = state.selectedProfileId && state.unmappedFieldIds.has(field.id);
+    const hasPreservedPresetNoMapping = state.clearedFieldIds.has(field.id) && presetUnmappedFieldIds.has(field.id);
+    if (hasCurrentExplicitNoMapping || hasPreservedPresetNoMapping) {
+      persistedUnmappedFieldIds.add(field.id);
+    }
+  }
+
   const hasValues = Object.keys(values).length > 0;
-  const hasMappings = Object.keys(persistedMappings).length > 0 || persistedUnmappedFieldIds.length > 0;
+  const normalizedUnmappedFieldIds = Array.from(persistedUnmappedFieldIds).filter((fieldId) => activeFieldIds.has(fieldId));
+  const hasMappings = Object.keys(persistedMappings).length > 0 || normalizedUnmappedFieldIds.length > 0;
   if (!hasValues && !hasMappings) {
     return null;
   }
@@ -589,7 +618,7 @@ function buildPresetPayload(): FormPreset | null {
     fields: structuredClone(state.activeForm.fields),
     values: structuredClone(values),
     mappings: persistedMappings,
-    ...(persistedUnmappedFieldIds.length ? { unmappedFieldIds: persistedUnmappedFieldIds } : {}),
+    ...(normalizedUnmappedFieldIds.length ? { unmappedFieldIds: normalizedUnmappedFieldIds } : {}),
     mappingSchemaVersion: 2,
     createdAt: state.preset?.createdAt ?? now,
     updatedAt: now,

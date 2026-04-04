@@ -552,6 +552,78 @@ describe("popup", () => {
     expect(document.querySelector<HTMLButtonElement>("#reset-preset")!.disabled).toBe(false);
   });
 
+  it("preserves untouched saved fields after Clear when a later autosave edits only one field", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+        {
+          id: "email",
+          label: "Email",
+          normalizedLabel: "email",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: {
+        full_name: "Saved Name",
+        email: "saved@example.com",
+      },
+      mappings: {},
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#clear-values")!.click();
+
+    const inputs = document.querySelectorAll<HTMLInputElement>('#fields input[type="text"]');
+    inputs[0]!.value = "New Name";
+    inputs[0]!.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect((mock.state.presets as FormPreset[])[0]).toMatchObject({
+      values: {
+        full_name: "New Name",
+        email: "saved@example.com",
+      },
+    });
+  });
+
   it("does not resurrect a removed mapping when switching profiles before autosave", async () => {
     const profiles: Profile[] = [
       {

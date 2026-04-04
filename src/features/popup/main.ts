@@ -1,6 +1,6 @@
 import { hasChromeRuntime, runtimeOpenOptionsPage, runtimeSendMessage } from "../../core/chrome-api";
 import { suggestProfileKey } from "../../core/matching";
-import { optionEquals } from "../../core/normalization";
+import { normalizeText, optionEquals } from "../../core/normalization";
 import { deletePreset, getPresetByFormKey, getProfiles, getSettings, savePreset } from "../../core/storage";
 import type {
   ActiveFormContext,
@@ -136,6 +136,19 @@ function renderProfileSelect(): void {
 }
 
 function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
+  if (markDirty) {
+    const field = state.activeForm?.fields.find((candidate) => candidate.id === fieldId);
+    const profile = getSelectedProfile();
+    const currentMapping = state.mappings[fieldId];
+    const mappedValue = field && profile && currentMapping ? coerceFieldValueForField(field, profile.values[currentMapping]) : undefined;
+
+    if (currentMapping && mappedValue !== undefined && !fieldValuesEqual(value, mappedValue)) {
+      delete state.mappings[fieldId];
+      state.unmappedFieldIds.add(fieldId);
+      state.suppressedMappingFieldIds.add(fieldId);
+    }
+  }
+
   state.values[fieldId] = value;
   state.clearedFieldIds.delete(fieldId);
   if (markDirty) {
@@ -145,7 +158,27 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
 }
 
 function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | undefined): boolean {
-  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+  if (left === undefined || left === null || right === undefined || right === null) {
+    return (left ?? null) === (right ?? null);
+  }
+
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return compareOptionArrays(left.map(String), right.map(String));
+  }
+
+  if (isChoiceWithOtherValue(left) && isChoiceWithOtherValue(right)) {
+    if (Array.isArray(left.selected) && Array.isArray(right.selected)) {
+      return compareOptionArrays(left.selected.map(String), right.selected.map(String)) && left.otherText === right.otherText;
+    }
+
+    if (typeof left.selected === "string" && typeof right.selected === "string") {
+      return optionEquals(left.selected, right.selected) && left.otherText === right.otherText;
+    }
+
+    return false;
+  }
+
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValue {
@@ -178,6 +211,16 @@ function hasPersistableFieldValue(value: FieldValue | undefined): boolean {
   }
 
   return true;
+}
+
+function compareOptionArrays(left: string[], right: string[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const normalizedLeft = left.map((item) => normalizeText(item)).sort();
+  const normalizedRight = right.map((item) => normalizeText(item)).sort();
+  return normalizedLeft.every((value, index) => value === normalizedRight[index]);
 }
 
 function clonePreset(preset: FormPreset | null): FormPreset | null {
@@ -274,10 +317,16 @@ function normalizeCheckboxValues(
   }
 
   if (otherSelected) {
+    const trimmedOtherText = (otherTextOverride ?? "").trim();
+    if (!trimmedOtherText) {
+      const selectedWithoutOther = selected.filter((value) => !optionEquals(value, field.otherOption as string));
+      return selectedWithoutOther.length > 0 ? selectedWithoutOther : undefined;
+    }
+
     return {
       kind: "choice_with_other",
       selected,
-      otherText: otherTextOverride ?? "",
+      otherText: trimmedOtherText,
     };
   }
 
@@ -319,6 +368,10 @@ function coerceFieldValueForField(field: DetectedField, value: FieldValue | Prof
         }
 
         if (field.otherOption && optionEquals(value.selected, field.otherOption)) {
+          if (!value.otherText.trim()) {
+            return undefined;
+          }
+
           return {
             kind: "choice_with_other",
             selected: field.otherOption,
@@ -427,7 +480,9 @@ function buildPresetPayload(): FormPreset | null {
   }
 
   const values = Object.fromEntries(
-    Object.entries(state.values).filter(([, value]) => hasPersistableFieldValue(value)),
+    state.activeForm.fields
+      .map((field) => [field.id, coerceFieldValueForField(field, state.values[field.id])] as const)
+      .filter(([, value]) => hasPersistableFieldValue(value)),
   ) as Record<string, FieldValue>;
   const hasValues = Object.keys(values).length > 0;
   const hasMappings = Object.keys(state.mappings).length > 0 || state.unmappedFieldIds.size > 0;
@@ -515,6 +570,8 @@ function schedulePresetSave(): void {
   if (!state.activeForm) {
     return;
   }
+
+  presetCommitVersion += 1;
 
   if (autosaveTimer !== null) {
     window.clearTimeout(autosaveTimer);
@@ -943,6 +1000,7 @@ async function handleFill(): Promise<void> {
 function handleClear(): void {
   const persistedPresetSnapshot = clonePreset(state.preset);
   presetCommitVersion += 1;
+  const clearCommitVersion = presetCommitVersion;
 
   if (autosaveTimer !== null) {
     window.clearTimeout(autosaveTimer);
@@ -953,6 +1011,10 @@ function handleClear(): void {
     const restorePromise = presetSaveInFlight
       .catch(() => undefined)
       .then(async () => {
+        if (clearCommitVersion !== presetCommitVersion) {
+          return;
+        }
+
         if (persistedPresetSnapshot) {
           await savePreset(persistedPresetSnapshot);
         } else if (state.preset ?? pendingPresetId) {

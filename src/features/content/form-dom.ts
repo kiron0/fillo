@@ -66,12 +66,56 @@ function getChoiceLabel(node: HTMLElement): string {
     }
   }
 
+  const role = node.getAttribute("role");
+  let current = node.parentElement;
+  while (current) {
+    if (role) {
+      const matchingChoices = Array.from(current.querySelectorAll<HTMLElement>(`[role="${role}"]`)).filter(isVisible);
+      if (matchingChoices.length === 1 && matchingChoices[0] === node) {
+        const candidate = rawTextContent(current);
+        if (candidate) {
+          return candidate;
+        }
+      }
+    }
+
+    current = current.parentElement;
+  }
+
   return "";
 }
 
 function getQuestionContainers(root: Document): HTMLElement[] {
-  const candidates = Array.from(root.querySelectorAll<HTMLElement>('[role="listitem"], .Qr7Oae'));
-  return candidates.filter((element) => isVisible(element));
+  const candidates = Array.from(root.querySelectorAll<HTMLElement>('[role="listitem"], .Qr7Oae')).filter((element) => isVisible(element));
+  const seen = new Set(candidates);
+
+  for (const checkbox of Array.from(root.querySelectorAll<HTMLElement>('[role="checkbox"]')).filter(isVisible)) {
+    if (candidates.some((container) => container.contains(checkbox))) {
+      continue;
+    }
+
+    const container = findVerifiedEmailContainer(checkbox);
+    if (container && !seen.has(container)) {
+      candidates.push(container);
+      seen.add(container);
+    }
+  }
+
+  return candidates;
+}
+
+function findVerifiedEmailContainer(checkbox: HTMLElement): HTMLElement | null {
+  let current: HTMLElement | null = checkbox;
+
+  while (current) {
+    const text = rawTextContent(current);
+    if (text && /record\b/i.test(text) && /email/i.test(text)) {
+      return current;
+    }
+    current = current.parentElement;
+  }
+
+  return null;
 }
 
 function getQuestionLabel(container: HTMLElement): string {
@@ -90,6 +134,10 @@ function getQuestionLabel(container: HTMLElement): string {
     if (label) {
       return label.replace(/\s+\*$/, "").trim();
     }
+  }
+
+  if (isVerifiedEmailConsentContainer(container)) {
+    return "Email";
   }
 
   return "";
@@ -116,7 +164,17 @@ function getSectionTitle(container: HTMLElement): string | undefined {
 }
 
 function isRequired(container: HTMLElement, label: string): boolean {
-  return /\*$/.test(rawTextContent(container.querySelector('[role="heading"], .M7eMe')) ?? "") || label.endsWith("*");
+  return /\*$/.test(rawTextContent(container.querySelector('[role="heading"], .M7eMe')) ?? "") || label.endsWith("*") || isVerifiedEmailConsentContainer(container);
+}
+
+function isVerifiedEmailConsentContainer(container: HTMLElement): boolean {
+  return Boolean(findVerifiedEmailContainer(container.querySelector<HTMLElement>('[role="checkbox"]') ?? container)) && /email/i.test(rawTextContent(container));
+}
+
+function getVerifiedEmailOptionLabel(container: HTMLElement): string {
+  const fullText = rawTextContent(container);
+  const optionText = fullText.replace(/^email\s*:?\s*\*?\s*/i, "").trim();
+  return optionText || "Record email with my response";
 }
 
 function uniqueFieldId(container: HTMLElement, label: string, index: number): string {
@@ -246,7 +304,9 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
 
   const checkboxOptions = Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]')).filter(isVisible);
   if (checkboxOptions.length) {
-    const { options, otherOption } = buildChoiceOptions(checkboxOptions, container, "checkbox");
+    const { options, otherOption } = isVerifiedEmailConsentContainer(container)
+      ? { options: [getVerifiedEmailOptionLabel(container)], otherOption: undefined }
+      : buildChoiceOptions(checkboxOptions, container, "checkbox");
     return {
       field: {
         id: uniqueFieldId(container, label, index),
@@ -414,9 +474,13 @@ function selectRadioOption(container: HTMLElement, target: string): HTMLElement 
 function fillCheckboxGroup(container: HTMLElement, targetValues: string[]): boolean {
   const desired = new Set(targetValues.map((value) => normalizeText(value)));
   let foundRelevantOption = false;
+  const verifiedEmailOption = isVerifiedEmailConsentContainer(container) ? getVerifiedEmailOptionLabel(container) : null;
 
   for (const option of Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]')).filter(isVisible)) {
-    const labelText = getChoiceLabel(option) || (hasAttachedTextControl(option, "checkbox", container) ? "Other" : "");
+    const labelText =
+      verifiedEmailOption ??
+      getChoiceLabel(option) ??
+      (hasAttachedTextControl(option, "checkbox", container) ? "Other" : "");
     const label = normalizeText(labelText);
     if (label) {
       foundRelevantOption = true;

@@ -151,6 +151,24 @@ const scopedListboxHtml = `
 </html>
 `;
 
+const verifiedEmailConsentHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Email Consent</title>
+  </head>
+  <body>
+    <div class="XfpsVe">
+      <div>Email *</div>
+      <div class="consent-row">
+        <div role="checkbox" aria-checked="false" aria-label="Record email"></div>
+        <span>Record toufiqhasankiron0@gmail.com as the email to be included with my response</span>
+      </div>
+    </div>
+  </body>
+</html>
+`;
+
 function setInteractiveRoleClicks(root: Document) {
   for (const option of root.querySelectorAll<HTMLElement>('[role="radio"], [role="checkbox"]')) {
     option.addEventListener("click", () => {
@@ -347,5 +365,29 @@ describe("content dom", () => {
 
     expect(fillResult.filledFieldIds).toEqual(["session_0"]);
     expect(listbox.getAttribute("data-selected")).toBe("Evening");
+  });
+
+  it("scans and fills the verified-email consent checkbox", () => {
+    document.documentElement.innerHTML = verifiedEmailConsentHtml;
+    setInteractiveRoleClicks(document);
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSemail/viewform");
+
+    expect(scan.fields[0]).toMatchObject({
+      label: "Email",
+      type: "checkbox",
+      required: true,
+      options: ["Record toufiqhasankiron0@gmail.com as the email to be included with my response"],
+    });
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0].id]: ["Record toufiqhasankiron0@gmail.com as the email to be included with my response"],
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0].id]);
+    expect(document.querySelector<HTMLElement>('[role="checkbox"]')?.getAttribute("aria-checked")).toBe("true");
   });
 });

@@ -738,6 +738,60 @@ describe("popup", () => {
     });
   });
 
+  it("keeps Other text when checkbox selections change afterward", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Preferences",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "checkbox-form",
+      fields: [
+        {
+          id: "topics",
+          label: "Topics",
+          normalizedLabel: "topics",
+          type: "checkbox",
+          required: false,
+          options: ["Math", "Other", "Physics"],
+          otherOption: "Other",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('#fields input[type="checkbox"]'));
+    checkboxes[1]!.click();
+
+    const otherInput = document.querySelector<HTMLInputElement>(".other-text-input")!;
+    otherInput.value = "Biology";
+    otherInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const rerenderedCheckboxes = Array.from(document.querySelectorAll<HTMLInputElement>('#fields input[type="checkbox"]'));
+    rerenderedCheckboxes[0]!.click();
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect((mock.state.presets as FormPreset[])[0]!.values.topics).toEqual({
+      kind: "choice_with_other",
+      selected: ["Other", "Math"],
+      otherText: "Biology",
+    });
+  });
+
   it("keeps an explicit No mapping choice after reopening the popup", async () => {
     const profiles: Profile[] = [
       {
@@ -1465,6 +1519,70 @@ describe("popup", () => {
     const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
     expect(Array.from(mappingSelect.options).some((option) => option.value === "invalidBirthday")).toBe(false);
     expect(Array.from(mappingSelect.options).some((option) => option.value === "validBirthday")).toBe(true);
+  });
+
+  it("reapplies the mapped value after reverting a manual edit back to it", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.value = "Alice";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("Bob");
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("fullName");
   });
 
   it("does not autosave or fill an incomplete Other selection", async () => {

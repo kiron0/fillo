@@ -219,6 +219,10 @@ function extractOptionsFromRoleNodes(nodes: HTMLElement[]): string[] {
   return nodes.map((node) => getChoiceLabel(node)).filter(Boolean);
 }
 
+function isSelectableNativeOption(option: HTMLOptionElement, totalOptions: number): boolean {
+  return option.value.trim().length > 0 || totalOptions === 1;
+}
+
 function findVisibleTextControl(container: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
   const candidates = Array.from(
     container.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
@@ -364,6 +368,7 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
         type: "dropdown",
         required: isRequired(container, label),
         options: Array.from(select.options)
+          .filter((option) => isSelectableNativeOption(option, select.options.length))
           .map((option) => option.textContent?.trim() ?? "")
           .filter(Boolean),
         helpText: getHelpText(container),
@@ -588,7 +593,9 @@ function fillChoiceAttachedText(
 
 function fillDropdown(container: HTMLElement, control: HTMLElement, value: string): boolean {
   if (control instanceof HTMLSelectElement) {
-    const option = Array.from(control.options).find((candidate) => optionEquals(candidate.textContent ?? "", value));
+    const option = Array.from(control.options).find((candidate) =>
+      isSelectableNativeOption(candidate, control.options.length) && optionEquals(candidate.textContent ?? "", value),
+    );
     if (!option) {
       return false;
     }

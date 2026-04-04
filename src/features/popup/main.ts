@@ -22,6 +22,7 @@ type PopupState = {
   values: Record<string, FieldValue>;
   mappings: Record<string, string>;
   unmappedFieldIds: Set<string>;
+  autoBrokenMappingFieldIds: Set<string>;
   dirtyFieldIds: Set<string>;
   clearedFieldIds: Set<string>;
   suppressedMappingFieldIds: Set<string>;
@@ -37,6 +38,7 @@ const state: PopupState = {
   values: {},
   mappings: {},
   unmappedFieldIds: new Set<string>(),
+  autoBrokenMappingFieldIds: new Set<string>(),
   dirtyFieldIds: new Set<string>(),
   clearedFieldIds: new Set<string>(),
   suppressedMappingFieldIds: new Set<string>(),
@@ -136,23 +138,48 @@ function renderProfileSelect(): void {
 }
 
 function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
+  let shouldMarkDirty = markDirty;
+
   if (markDirty) {
     const field = state.activeForm?.fields.find((candidate) => candidate.id === fieldId);
     const profile = getSelectedProfile();
     const currentMapping = state.mappings[fieldId];
     const mappedValue = field && profile && currentMapping ? coerceFieldValueForField(field, profile.values[currentMapping]) : undefined;
 
-    if (currentMapping && mappedValue !== undefined && !fieldValuesEqual(value, mappedValue)) {
-      delete state.mappings[fieldId];
-      state.unmappedFieldIds.add(fieldId);
-      state.suppressedMappingFieldIds.add(fieldId);
+    if (currentMapping && mappedValue !== undefined) {
+      if (fieldValuesEqual(value, mappedValue)) {
+        shouldMarkDirty = false;
+      } else {
+        delete state.mappings[fieldId];
+        state.unmappedFieldIds.add(fieldId);
+        state.suppressedMappingFieldIds.add(fieldId);
+        state.autoBrokenMappingFieldIds.add(fieldId);
+      }
+    } else if (field && profile && state.autoBrokenMappingFieldIds.has(fieldId)) {
+      const preferredMapping =
+        (state.preset?.mappings?.[fieldId] && coerceFieldValueForField(field, profile.values[state.preset.mappings[fieldId]]) !== undefined
+          ? state.preset.mappings[fieldId]
+          : undefined) ?? suggestProfileKey(field, profile);
+
+      if (preferredMapping) {
+        const preferredMappedValue = coerceFieldValueForField(field, profile.values[preferredMapping]);
+        if (preferredMappedValue !== undefined && fieldValuesEqual(value, preferredMappedValue)) {
+          state.mappings[fieldId] = preferredMapping;
+          state.unmappedFieldIds.delete(fieldId);
+          state.suppressedMappingFieldIds.delete(fieldId);
+          state.autoBrokenMappingFieldIds.delete(fieldId);
+          shouldMarkDirty = false;
+        }
+      }
     }
   }
 
   state.values[fieldId] = value;
   state.clearedFieldIds.delete(fieldId);
-  if (markDirty) {
+  if (shouldMarkDirty) {
     state.dirtyFieldIds.add(fieldId);
+  } else {
+    clearDirtyField(fieldId);
   }
   schedulePresetSave();
 }
@@ -432,6 +459,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
     delete state.mappings[fieldId];
     state.unmappedFieldIds.add(fieldId);
     state.suppressedMappingFieldIds.add(fieldId);
+    state.autoBrokenMappingFieldIds.delete(fieldId);
 
     if (field && profile && previousMapping) {
       const previousMappedValue = coerceFieldValueForField(field, profile.values[previousMapping]);
@@ -454,6 +482,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
     state.mappings[fieldId] = value;
     state.unmappedFieldIds.delete(fieldId);
     state.suppressedMappingFieldIds.delete(fieldId);
+    state.autoBrokenMappingFieldIds.delete(fieldId);
     state.clearedFieldIds.delete(fieldId);
     schedulePresetSave();
     return;
@@ -467,6 +496,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
   state.mappings[fieldId] = value;
   state.unmappedFieldIds.delete(fieldId);
   state.suppressedMappingFieldIds.delete(fieldId);
+  state.autoBrokenMappingFieldIds.delete(fieldId);
   state.clearedFieldIds.delete(fieldId);
   state.values[fieldId] = mappedValue;
   clearDirtyField(fieldId);
@@ -682,7 +712,6 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       wrapper.className = "checkbox-list";
       const selectedValues = isChoiceWithOtherValue(value) && Array.isArray(value.selected) ? value.selected : Array.isArray(value) ? value.map(String) : [];
       const selected = new Set(selectedValues);
-      const otherText = isChoiceWithOtherValue(value) ? value.otherText : "";
       const getCurrentSelectedValues = (): string[] => {
         const current = state.values[field.id];
         if (isChoiceWithOtherValue(current) && Array.isArray(current.selected)) {
@@ -694,6 +723,10 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
         }
 
         return selectedValues;
+      };
+      const getCurrentOtherText = (): string => {
+        const current = state.values[field.id];
+        return isChoiceWithOtherValue(current) ? current.otherText : "";
       };
 
       for (const optionValue of field.options ?? []) {
@@ -716,7 +749,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
             updateFieldValue(field.id, {
               kind: "choice_with_other",
               selected: nextValues,
-              otherText,
+              otherText: getCurrentOtherText(),
             });
             renderFields();
             return;
@@ -739,7 +772,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
         otherInput.type = "text";
         otherInput.className = "other-text-input";
         otherInput.placeholder = `Enter ${field.otherOption.toLowerCase()} value`;
-        otherInput.value = otherText;
+        otherInput.value = getCurrentOtherText();
         otherInput.addEventListener("input", () =>
           updateFieldValue(field.id, {
             kind: "choice_with_other",
@@ -1039,6 +1072,7 @@ function handleClear(): void {
   state.values = {};
   state.mappings = {};
   state.unmappedFieldIds.clear();
+  state.autoBrokenMappingFieldIds.clear();
   state.preset = persistedPresetSnapshot;
   state.dirtyFieldIds.clear();
   renderPresetActions();
@@ -1075,6 +1109,7 @@ async function handleResetPreset(): Promise<void> {
   state.values = {};
   state.mappings = {};
   state.unmappedFieldIds.clear();
+  state.autoBrokenMappingFieldIds.clear();
   state.dirtyFieldIds.clear();
   state.clearedFieldIds.clear();
   state.suppressedMappingFieldIds.clear();

@@ -255,6 +255,9 @@ describe("content dom", () => {
       label: "Full Name",
       required: true,
     });
+    expect(result.fields[4]).toMatchObject({
+      options: ["Morning", "Evening"],
+    });
   });
 
   it("fills text, textarea, radio, checkbox, and select fields", () => {
@@ -441,6 +444,22 @@ describe("content dom", () => {
 
     expect(fillResult.filledFieldIds).toEqual(["session_0"]);
     expect(listbox.getAttribute("data-selected")).toBe("Evening");
+  });
+
+  it("does not treat a native select placeholder as a real dropdown answer", () => {
+    document.documentElement.innerHTML = formHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSplaceholder/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        session: "Choose",
+      },
+    });
+
+    expect(fillResult.skippedFieldIds).toEqual(["session"]);
+    expect((document.querySelector('select[name="session"]') as HTMLSelectElement).value).toBe("");
   });
 
   it("scans and fills the verified-email consent checkbox", () => {

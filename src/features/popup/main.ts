@@ -308,7 +308,17 @@ function renderFields(): void {
 
     const label = document.createElement("p");
     label.className = "field-label";
-    label.textContent = field.label;
+
+    const labelText = document.createElement("span");
+    labelText.textContent = field.label;
+    label.append(labelText);
+
+    if (field.required) {
+      const requiredMark = document.createElement("span");
+      requiredMark.className = "field-required-mark";
+      requiredMark.textContent = " *";
+      label.append(requiredMark);
+    }
 
     const meta = document.createElement("div");
     meta.className = "field-meta";

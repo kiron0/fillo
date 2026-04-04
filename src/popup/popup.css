@@ -214,6 +214,11 @@ select {
   overflow-wrap: anywhere;
 }
 
+.field-required-mark {
+  color: var(--danger);
+  font-weight: 700;
+}
+
 .field-meta {
   display: flex;
   gap: 6px;

@@ -12,6 +12,13 @@ const staticFiles = [
   ["src/options/options.css", "options.css"],
 ] as const;
 
+const runtimeEntrypoints = [
+  ["background", "main.js", "index.js"],
+  ["content", "main.js", "index.js"],
+  ["popup", "main.js", "index.js"],
+  ["options", "main.js", "index.js"],
+] as const;
+
 const entrypoints = [
   "src/features/background/main.ts",
   "src/features/content/main.ts",
@@ -69,6 +76,18 @@ for (const [from, to] of staticFiles) {
   await mkdir(dirname(destination), { recursive: true });
   const contents = await readFile(join(root, from), "utf8");
   await writeFile(destination, contents, "utf8");
+}
+
+for (const [folder, sourceName, targetName] of runtimeEntrypoints) {
+  const sourcePath = join(distDir, folder, sourceName);
+  const targetPath = join(distDir, folder, targetName);
+  const bundledCode = await readFile(sourcePath, "utf8");
+  await writeFile(targetPath, bundledCode.replace(/sourceMappingURL=main\.js\.map/g, "sourceMappingURL=index.js.map"), "utf8");
+
+  const sourceMapPath = join(distDir, folder, `${sourceName}.map`);
+  const targetMapPath = join(distDir, folder, `${targetName}.map`);
+  const sourceMap = await readFile(sourceMapPath, "utf8");
+  await writeFile(targetMapPath, sourceMap, "utf8");
 }
 
 await writeFile(join(distDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");

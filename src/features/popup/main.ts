@@ -611,7 +611,7 @@ function buildPresetPayload(): FormPreset | null {
 
   const now = Date.now();
   return {
-    id: state.preset?.id ?? crypto.randomUUID(),
+    id: state.preset?.id ?? pendingPresetId ?? crypto.randomUUID(),
     formKey: state.activeForm.formKey,
     name: state.preset?.name ?? state.activeForm.title,
     formTitle: state.activeForm.title,

@@ -293,6 +293,22 @@ function findMatchingOption(field: DetectedField, value: string): string | undef
   return field.options?.find((option) => optionEquals(option, value));
 }
 
+function isPopupEditableField(field: DetectedField): boolean {
+  switch (field.type) {
+    case "text":
+    case "textarea":
+    case "radio":
+    case "checkbox":
+    case "dropdown":
+    case "scale":
+    case "date":
+    case "time":
+      return true;
+    default:
+      return false;
+  }
+}
+
 function isValidDateValue(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) {
@@ -663,6 +679,15 @@ function schedulePresetSave(): void {
 }
 
 function createValueControl(field: DetectedField, value: FieldValue): HTMLElement {
+  if (!isPopupEditableField(field)) {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.value = "";
+    input.disabled = true;
+    input.placeholder = "This field type is not supported yet";
+    return input;
+  }
+
   switch (field.type) {
     case "textarea": {
       const textarea = document.createElement("textarea");
@@ -880,7 +905,7 @@ function renderFields(): void {
     body.className = "field-body";
     body.append(createValueControl(field, state.values[field.id] ?? null));
 
-    if (profile) {
+    if (profile && isPopupEditableField(field)) {
       const compatibleProfileKeys = Object.keys(profile.values).filter((key) =>
         coerceFieldValueForField(field, profile.values[key]) !== undefined,
       );

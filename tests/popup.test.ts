@@ -1951,6 +1951,55 @@ describe("popup", () => {
     expect(mappingSelect.value).toBe("");
   });
 
+  it("shows unsupported fields as disabled and hides mapping controls", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Matrix Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "matrix-form",
+      fields: [
+        {
+          id: "availability_grid",
+          label: "Availability",
+          normalizedLabel: "availability",
+          type: "grid",
+          required: false,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    expect(input.disabled).toBe(true);
+    expect(input.placeholder).toBe("This field type is not supported yet");
+    expect(document.querySelector(".mapping-row")).toBeNull();
+  });
+
   it("reapplies the mapped value after reverting a manual edit back to it", async () => {
     const profiles: Profile[] = [
       {

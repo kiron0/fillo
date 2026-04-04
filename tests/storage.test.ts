@@ -66,6 +66,7 @@ describe("storage", () => {
       defaultProfileId: "profile-1",
       autoLoadMatchingProfile: false,
       confirmBeforeFill: true,
+      showBackupSection: false,
     });
 
     expect(await getProfiles()).toEqual([profile]);
@@ -74,6 +75,7 @@ describe("storage", () => {
       defaultProfileId: "profile-1",
       autoLoadMatchingProfile: false,
       confirmBeforeFill: true,
+      showBackupSection: false,
     });
   });
 

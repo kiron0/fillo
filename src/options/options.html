@@ -11,7 +11,7 @@
       <header class="hero">
         <p class="eyebrow">Fillo</p>
         <h1>Profiles, saved forms, and settings</h1>
-        <p class="muted">Everything stays in `chrome.storage.local` unless you export it yourself.</p>
+        <p class="muted">Your profiles and saved forms stay private on this browser unless you choose to back them up.</p>
       </header>
 
       <section class="panel">
@@ -28,13 +28,17 @@
             <button id="save-settings" class="button accent settings-save">Save settings</button>
           </div>
           <div class="settings-toggles">
-            <label class="toggle card-toggle">
+            <label class="toggle">
               <input type="checkbox" id="auto-load-profile" />
               <span>Auto-load matching profile values</span>
             </label>
-            <label class="toggle card-toggle">
+            <label class="toggle">
               <input type="checkbox" id="confirm-before-fill" />
               <span>Confirm before filling</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="show-backup-section" />
+              <span>I need backup tools on this page</span>
             </label>
           </div>
         </div>
@@ -55,7 +59,7 @@
         <div id="presets" class="card-list"></div>
       </section>
 
-      <section class="panel">
+      <section id="backup-section" class="panel hidden">
         <div class="panel-head">
           <h2>Backup</h2>
         </div>

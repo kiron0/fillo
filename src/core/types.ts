@@ -62,6 +62,7 @@ export interface AppSettings {
   defaultProfileId: string | null;
   autoLoadMatchingProfile: boolean;
   confirmBeforeFill: boolean;
+  showBackupSection: boolean;
 }
 
 export interface ExportedAppData {
@@ -117,4 +118,5 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultProfileId: null,
   autoLoadMatchingProfile: true,
   confirmBeforeFill: true,
+  showBackupSection: false,
 };

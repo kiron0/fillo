@@ -17,10 +17,12 @@ const statusNode = document.querySelector<HTMLParagraphElement>("#status")!;
 const defaultProfileSelect = document.querySelector<HTMLSelectElement>("#default-profile")!;
 const autoLoadCheckbox = document.querySelector<HTMLInputElement>("#auto-load-profile")!;
 const confirmBeforeFillCheckbox = document.querySelector<HTMLInputElement>("#confirm-before-fill")!;
+const showBackupSectionCheckbox = document.querySelector<HTMLInputElement>("#show-backup-section")!;
 const saveSettingsButton = document.querySelector<HTMLButtonElement>("#save-settings")!;
 const addProfileButton = document.querySelector<HTMLButtonElement>("#add-profile")!;
 const profilesContainer = document.querySelector<HTMLDivElement>("#profiles")!;
 const presetsContainer = document.querySelector<HTMLDivElement>("#presets")!;
+const backupSection = document.querySelector<HTMLDivElement>("#backup-section")!;
 const exportButton = document.querySelector<HTMLButtonElement>("#export-data")!;
 const importButton = document.querySelector<HTMLButtonElement>("#import-data")!;
 const clearDataButton = document.querySelector<HTMLButtonElement>("#clear-data")!;
@@ -37,6 +39,7 @@ const state: {
     defaultProfileId: null,
     autoLoadMatchingProfile: true,
     confirmBeforeFill: true,
+    showBackupSection: false,
   },
 };
 
@@ -274,8 +277,14 @@ async function refresh(): Promise<void> {
   renderDefaultProfileOptions();
   autoLoadCheckbox.checked = settings.autoLoadMatchingProfile;
   confirmBeforeFillCheckbox.checked = settings.confirmBeforeFill;
+  showBackupSectionCheckbox.checked = settings.showBackupSection;
+  backupSection.classList.toggle("hidden", !settings.showBackupSection);
   renderProfiles();
   renderPresets();
+}
+
+function syncBackupSectionVisibility(): void {
+  backupSection.classList.toggle("hidden", !showBackupSectionCheckbox.checked);
 }
 
 saveSettingsButton.addEventListener("click", async () => {
@@ -283,9 +292,20 @@ saveSettingsButton.addEventListener("click", async () => {
     defaultProfileId: defaultProfileSelect.value || null,
     autoLoadMatchingProfile: autoLoadCheckbox.checked,
     confirmBeforeFill: confirmBeforeFillCheckbox.checked,
+    showBackupSection: showBackupSectionCheckbox.checked,
   });
   await refresh();
   setStatus("Saved settings.");
+});
+
+showBackupSectionCheckbox.addEventListener("change", async () => {
+  syncBackupSectionVisibility();
+  await saveSettings({
+    defaultProfileId: defaultProfileSelect.value || null,
+    autoLoadMatchingProfile: autoLoadCheckbox.checked,
+    confirmBeforeFill: confirmBeforeFillCheckbox.checked,
+    showBackupSection: showBackupSectionCheckbox.checked,
+  });
 });
 
 addProfileButton.addEventListener("click", async () => {

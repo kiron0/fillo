@@ -112,39 +112,32 @@ h3 {
 
 .settings-primary {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
-  align-items: end;
+  align-items: start;
 }
 
 .settings-toggles {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
+  display: grid;
+  gap: 10px;
 }
 
 .toggle {
   display: flex;
   gap: 10px;
   align-items: center;
+  padding: 0;
+}
+
+.toggle input {
+  width: auto;
+  margin: 0;
+  flex: 0 0 auto;
 }
 
 .stack-field {
   display: grid;
   gap: 8px;
-}
-
-.card-toggle {
-  flex: 1 1 280px;
-  padding: 12px;
-  min-height: 72px;
-  border-radius: 14px;
-  border: 1px solid rgba(69, 52, 36, 0.1);
-  background: #fffefb;
-}
-
-.card-toggle span {
-  line-height: 1.2;
 }
 
 .card-list {
@@ -240,9 +233,7 @@ button {
 }
 
 .settings-save {
-  min-width: 180px;
-  width: auto;
-  align-self: stretch;
+  width: 100%;
 }
 
 .backup-actions .button,
@@ -256,14 +247,8 @@ button {
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 980px) {
-  .settings-primary {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-save {
-    width: 100%;
-  }
+.hidden {
+  display: none;
 }
 
 @media (max-width: 720px) {
@@ -295,7 +280,6 @@ button {
 
   .settings-primary,
   .settings-toggles {
-    display: grid;
     grid-template-columns: 1fr;
   }
 

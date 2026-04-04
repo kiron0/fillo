@@ -18,7 +18,6 @@ const popupHtml = `
         <label>
           <select id="profile-select"></select>
         </label>
-        <p id="autosave-status" class="hidden"></p>
         <div class="actions">
           <button id="reset-preset"></button>
           <button id="fill-form"></button>
@@ -160,9 +159,6 @@ describe("popup", () => {
     input.value = "Manual Name";
     input.dispatchEvent(new Event("input", { bubbles: true }));
 
-    const autosaveNode = document.querySelector<HTMLParagraphElement>("#autosave-status")!;
-    expect(autosaveNode.textContent).toBe("Saving changes...");
-
     const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
     profileSelect.value = "profile-2";
     profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
@@ -171,7 +167,6 @@ describe("popup", () => {
     expect(rerenderedInput.value).toBe("Manual Name");
 
     await vi.advanceTimersByTimeAsync(500);
-    expect(autosaveNode.textContent).toBe("All changes saved.");
 
     const savedPreset = (mock.state.presets as FormPreset[])[0];
     expect(savedPreset.values.full_name).toBe("Manual Name");

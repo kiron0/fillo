@@ -239,7 +239,7 @@ function renderPresets(): void {
 
     const meta = document.createElement("p");
     meta.className = "preset-meta";
-    meta.textContent = `${preset.fields.length} field${preset.fields.length === 1 ? "" : "s"} • Updated ${new Date(preset.updatedAt).toLocaleString()}`;
+    meta.textContent = `${preset.fields.length} field${preset.fields.length === 1 ? "" : "s"} | Updated ${new Date(preset.updatedAt).toLocaleString()}`;
 
     const saveButton = document.createElement("button");
     saveButton.className = "button accent";

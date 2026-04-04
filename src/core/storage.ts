@@ -47,6 +47,12 @@ export async function saveProfile(profile: Profile): Promise<void> {
 export async function deleteProfile(profileId: string): Promise<void> {
   const data = await readAll();
   data.profiles = data.profiles.filter((item) => item.id !== profileId);
+  if (data.settings.defaultProfileId === profileId) {
+    data.settings = {
+      ...data.settings,
+      defaultProfileId: null,
+    };
+  }
   await writeAll(data);
 }
 

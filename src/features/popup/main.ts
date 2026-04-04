@@ -22,7 +22,7 @@ type PopupState = {
   values: Record<string, FieldValue>;
   mappings: Record<string, string>;
   unmappedFieldIds: Set<string>;
-  autoBrokenMappingFieldIds: Set<string>;
+  autoBrokenMappings: Map<string, string>;
   dirtyFieldIds: Set<string>;
   clearedFieldIds: Set<string>;
   suppressedMappingFieldIds: Set<string>;
@@ -38,7 +38,7 @@ const state: PopupState = {
   values: {},
   mappings: {},
   unmappedFieldIds: new Set<string>(),
-  autoBrokenMappingFieldIds: new Set<string>(),
+  autoBrokenMappings: new Map<string, string>(),
   dirtyFieldIds: new Set<string>(),
   clearedFieldIds: new Set<string>(),
   suppressedMappingFieldIds: new Set<string>(),
@@ -153,13 +153,16 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
         delete state.mappings[fieldId];
         state.unmappedFieldIds.add(fieldId);
         state.suppressedMappingFieldIds.add(fieldId);
-        state.autoBrokenMappingFieldIds.add(fieldId);
+        state.autoBrokenMappings.set(fieldId, currentMapping);
       }
-    } else if (field && profile && state.autoBrokenMappingFieldIds.has(fieldId)) {
+    } else if (field && profile && state.autoBrokenMappings.has(fieldId)) {
+      const brokenMapping = state.autoBrokenMappings.get(fieldId);
       const preferredMapping =
+        (brokenMapping && coerceFieldValueForField(field, profile.values[brokenMapping]) !== undefined ? brokenMapping : undefined) ??
         (state.preset?.mappings?.[fieldId] && coerceFieldValueForField(field, profile.values[state.preset.mappings[fieldId]]) !== undefined
           ? state.preset.mappings[fieldId]
-          : undefined) ?? suggestProfileKey(field, profile);
+          : undefined) ??
+        suggestProfileKey(field, profile);
 
       if (preferredMapping) {
         const preferredMappedValue = coerceFieldValueForField(field, profile.values[preferredMapping]);
@@ -167,7 +170,7 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
           state.mappings[fieldId] = preferredMapping;
           state.unmappedFieldIds.delete(fieldId);
           state.suppressedMappingFieldIds.delete(fieldId);
-          state.autoBrokenMappingFieldIds.delete(fieldId);
+          state.autoBrokenMappings.delete(fieldId);
           shouldMarkDirty = false;
         }
       }
@@ -459,7 +462,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
     delete state.mappings[fieldId];
     state.unmappedFieldIds.add(fieldId);
     state.suppressedMappingFieldIds.add(fieldId);
-    state.autoBrokenMappingFieldIds.delete(fieldId);
+    state.autoBrokenMappings.delete(fieldId);
 
     if (field && profile && previousMapping) {
       const previousMappedValue = coerceFieldValueForField(field, profile.values[previousMapping]);
@@ -482,7 +485,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
     state.mappings[fieldId] = value;
     state.unmappedFieldIds.delete(fieldId);
     state.suppressedMappingFieldIds.delete(fieldId);
-    state.autoBrokenMappingFieldIds.delete(fieldId);
+    state.autoBrokenMappings.delete(fieldId);
     state.clearedFieldIds.delete(fieldId);
     schedulePresetSave();
     return;
@@ -496,7 +499,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
   state.mappings[fieldId] = value;
   state.unmappedFieldIds.delete(fieldId);
   state.suppressedMappingFieldIds.delete(fieldId);
-  state.autoBrokenMappingFieldIds.delete(fieldId);
+  state.autoBrokenMappings.delete(fieldId);
   state.clearedFieldIds.delete(fieldId);
   state.values[fieldId] = mappedValue;
   clearDirtyField(fieldId);
@@ -1072,7 +1075,7 @@ function handleClear(): void {
   state.values = {};
   state.mappings = {};
   state.unmappedFieldIds.clear();
-  state.autoBrokenMappingFieldIds.clear();
+  state.autoBrokenMappings.clear();
   state.preset = persistedPresetSnapshot;
   state.dirtyFieldIds.clear();
   renderPresetActions();
@@ -1109,7 +1112,7 @@ async function handleResetPreset(): Promise<void> {
   state.values = {};
   state.mappings = {};
   state.unmappedFieldIds.clear();
-  state.autoBrokenMappingFieldIds.clear();
+  state.autoBrokenMappings.clear();
   state.dirtyFieldIds.clear();
   state.clearedFieldIds.clear();
   state.suppressedMappingFieldIds.clear();

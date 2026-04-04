@@ -151,6 +151,25 @@ const scopedListboxHtml = `
 </html>
 `;
 
+const selectWithTextPlaceholderHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Text Placeholder Select</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Department</div>
+      <select name="department">
+        <option value="placeholder">Choose</option>
+        <option value="cse">CSE</option>
+        <option value="eee">EEE</option>
+      </select>
+    </div>
+  </body>
+</html>
+`;
+
 const verifiedEmailConsentHtml = `
 <!doctype html>
 <html>
@@ -460,6 +479,46 @@ describe("content dom", () => {
 
     expect(fillResult.skippedFieldIds).toEqual(["session"]);
     expect((document.querySelector('select[name="session"]') as HTMLSelectElement).value).toBe("");
+  });
+
+  it("ignores non-empty native select placeholder labels during scan and fill", () => {
+    document.documentElement.innerHTML = selectWithTextPlaceholderHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLStextplaceholder/viewform");
+
+    expect(scan.fields[0]).toMatchObject({
+      type: "dropdown",
+      options: ["CSE", "EEE"],
+    });
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        department: "Choose",
+      },
+    });
+
+    expect(fillResult.skippedFieldIds).toEqual(["department"]);
+    expect((document.querySelector('select[name="department"]') as HTMLSelectElement).value).toBe("placeholder");
+  });
+
+  it("does not report success for empty checkbox payloads or clear existing checks", () => {
+    document.documentElement.innerHTML = formHtml;
+    setInteractiveRoleClicks(document);
+    document.querySelectorAll<HTMLElement>('[role="checkbox"]')[0].setAttribute("aria-checked", "true");
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScheckboxempty/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        skills_3: [],
+      },
+    });
+
+    expect(fillResult.skippedFieldIds).toEqual(["skills_3"]);
+    expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[0].getAttribute("aria-checked")).toBe("true");
+    expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[1].getAttribute("aria-checked")).toBe("false");
   });
 
   it("scans and fills the verified-email consent checkbox", () => {

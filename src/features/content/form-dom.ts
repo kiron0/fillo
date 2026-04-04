@@ -219,8 +219,21 @@ function extractOptionsFromRoleNodes(nodes: HTMLElement[]): string[] {
   return nodes.map((node) => getChoiceLabel(node)).filter(Boolean);
 }
 
+function looksLikePlaceholderLabel(label: string): boolean {
+  const normalized = normalizeText(label);
+  return normalized === "choose" || normalized === "select" || normalized === "select an option" || normalized === "choose an option";
+}
+
 function isSelectableNativeOption(option: HTMLOptionElement, totalOptions: number): boolean {
-  return option.value.trim().length > 0 || totalOptions === 1;
+  if (option.disabled) {
+    return false;
+  }
+
+  if (option.value.trim().length > 0) {
+    return !looksLikePlaceholderLabel(option.textContent?.trim() ?? "");
+  }
+
+  return totalOptions === 1;
 }
 
 function findVisibleTextControl(container: HTMLElement): HTMLInputElement | HTMLTextAreaElement | null {
@@ -542,6 +555,10 @@ function selectRadioOption(container: HTMLElement, target: string): HTMLElement 
 }
 
 function fillCheckboxGroup(container: HTMLElement, targetValues: string[]): boolean {
+  if (targetValues.length === 0) {
+    return false;
+  }
+
   const desired = new Set(targetValues.map((value) => normalizeText(value)));
   const verifiedEmailOption = isVerifiedEmailConsentContainer(container) ? getVerifiedEmailOptionLabel(container) : null;
   const options = Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]'))

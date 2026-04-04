@@ -1585,6 +1585,72 @@ describe("popup", () => {
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("fullName");
   });
 
+  it("restores the originally broken mapping key when reverting to its value", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { preferredName: "Alice", fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Alice" },
+      mappings: { full_name: "preferredName" },
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [preset],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.value = "Alice";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("preferredName");
+  });
+
   it("does not autosave or fill an incomplete Other selection", async () => {
     const activeForm: ActiveFormContext = {
       title: "Department Form",

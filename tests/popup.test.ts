@@ -2755,4 +2755,42 @@ describe("popup", () => {
       expect(fillPayload).toEqual({});
     });
   });
+
+  it("shows unsupported grid-only forms instead of treating them as unreadable", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Availability Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "grid-only-form",
+      fields: [
+        {
+          id: "availability",
+          label: "Availability",
+          normalizedLabel: "availability",
+          type: "grid",
+          required: false,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLHeadingElement>("#form-title")!.textContent).toBe("Availability Form");
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.disabled).toBe(true);
+    expect(document.querySelector<HTMLDivElement>("#error-card")!.classList.contains("hidden")).toBe(true);
+  });
 });

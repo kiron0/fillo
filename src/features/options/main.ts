@@ -12,6 +12,7 @@ import {
   savePreset,
   saveSettings,
 } from "../../core/storage";
+import { validateImportedAppData } from "../../core/storage-ops";
 import type { AppSettings, FormPreset, ImportedAppData, Profile } from "../../core/types";
 
 const statusNode = document.querySelector<HTMLParagraphElement>("#status")!;
@@ -85,29 +86,7 @@ function getProfileValueKind(value: string | number | boolean | string[]): "stri
 }
 
 function isImportedData(value: unknown): value is ImportedAppData {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const payload = value as Record<string, unknown>;
-
-  if (payload.version !== 1) {
-    return false;
-  }
-
-  if (!("profiles" in payload) || !Array.isArray(payload.profiles)) {
-    return false;
-  }
-
-  if (!("presets" in payload) || !Array.isArray(payload.presets)) {
-    return false;
-  }
-
-  if (!("settings" in payload) || typeof payload.settings !== "object" || payload.settings === null || Array.isArray(payload.settings)) {
-    return false;
-  }
-
-  return true;
+  return validateImportedAppData(value);
 }
 
 function createEmptyProfile(): Profile {
@@ -546,7 +525,7 @@ importButton.addEventListener("click", () => {
     }
 
     if (!isImportedData(payload)) {
-      throw new Error("Import payload must be a version 1 backup with profiles, presets, and settings.");
+      throw new Error("Import payload must be a valid version 1 backup with well-formed profiles, presets, and settings.");
     }
 
     await importAppData(payload);

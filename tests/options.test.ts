@@ -426,7 +426,44 @@ describe("options", () => {
     document.querySelector<HTMLButtonElement>("#import-data")!.click();
     await vi.waitFor(() => {
       expect(document.querySelector<HTMLParagraphElement>("#status")!.textContent).toBe(
-        "Import payload must be a version 1 backup with profiles, presets, and settings.",
+        "Import payload must be a valid version 1 backup with well-formed profiles, presets, and settings.",
+      );
+    });
+  });
+
+  it("rejects structurally invalid presets during backup import", async () => {
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const backupPayload = document.querySelector<HTMLTextAreaElement>("#backup-payload")!;
+    backupPayload.value = JSON.stringify({
+      version: 1,
+      profiles: [],
+      presets: [{}],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    document.querySelector<HTMLButtonElement>("#import-data")!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLParagraphElement>("#status")!.textContent).toBe(
+        "Import payload must be a valid version 1 backup with well-formed profiles, presets, and settings.",
       );
     });
   });

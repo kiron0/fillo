@@ -74,7 +74,7 @@ async function scanActiveFormWithRetry(tabId: number): Promise<ScanResult> {
   }
 
   if (lastScan) {
-    throw new Error("No supported fields were detected on this Google Form.");
+    return lastScan;
   }
 
   throw new Error("Unable to scan the active Google Form.");

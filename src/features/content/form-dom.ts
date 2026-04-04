@@ -9,6 +9,12 @@ type FieldDescriptor = {
   type: FieldType;
 };
 
+type FieldIdentity = {
+  normalizedLabel: string;
+  sectionTitle?: string;
+  helpText?: string;
+};
+
 function isVisible(element: Element): boolean {
   const node = element as HTMLElement;
   if (node.hidden) {
@@ -371,6 +377,24 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
     };
   }
 
+  const grid = container.querySelector<HTMLElement>('[role="grid"], .freebirdFormviewerComponentsQuestionGridRoot');
+  if (grid && isVisible(grid)) {
+    return {
+      field: {
+        id: uniqueFieldId(container, label, index),
+        label,
+        normalizedLabel: normalizeText(label),
+        type: "grid",
+        required: isRequired(container, label),
+        helpText: getHelpText(container),
+        sectionTitle: getSectionTitle(container),
+      },
+      container,
+      control: grid,
+      type: "grid",
+    };
+  }
+
   const select = container.querySelector<HTMLSelectElement>("select");
   if (select && isVisible(select)) {
     return {
@@ -674,14 +698,51 @@ function getListboxOptionNodes(control: HTMLElement, container: HTMLElement): HT
   return Array.from((popupRoot ?? container).querySelectorAll<HTMLElement>('[role="option"]')).filter(isVisible);
 }
 
+function buildFieldIdentity(field: Pick<DetectedField, "normalizedLabel" | "sectionTitle" | "helpText">): FieldIdentity {
+  return {
+    normalizedLabel: field.normalizedLabel,
+    sectionTitle: field.sectionTitle ? normalizeText(field.sectionTitle) : undefined,
+    helpText: field.helpText ? normalizeText(field.helpText) : undefined,
+  };
+}
+
+function fieldIdentityScore(left: FieldIdentity, right: FieldIdentity): number {
+  if (left.normalizedLabel !== right.normalizedLabel) {
+    return -1;
+  }
+
+  let score = 2;
+  if (left.sectionTitle && right.sectionTitle && left.sectionTitle === right.sectionTitle) {
+    score += 2;
+  }
+  if (left.helpText && right.helpText && left.helpText === right.helpText) {
+    score += 1;
+  }
+
+  return score;
+}
+
 function findDescriptorByField(root: Document, field: DetectedField): FieldDescriptor | null {
   const descriptors = getQuestionContainers(root).map(detectField).filter((value): value is FieldDescriptor => Boolean(value));
+  const referenceIdentity = buildFieldIdentity(field);
 
-  return (
-    descriptors.find((descriptor) => descriptor.field.id === field.id) ??
-    descriptors.find((descriptor) => descriptor.field.normalizedLabel === field.normalizedLabel) ??
-    null
-  );
+  const exactIdMatch = descriptors.find((descriptor) => descriptor.field.id === field.id);
+  if (exactIdMatch) {
+    return exactIdMatch;
+  }
+
+  let bestMatch: FieldDescriptor | null = null;
+  let bestScore = -1;
+
+  for (const descriptor of descriptors) {
+    const score = fieldIdentityScore(buildFieldIdentity(descriptor.field), referenceIdentity);
+    if (score > bestScore) {
+      bestMatch = descriptor;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 2 ? bestMatch : null;
 }
 
 export function fillFormDocument(root: Document, request: FillRequest): FillResult {

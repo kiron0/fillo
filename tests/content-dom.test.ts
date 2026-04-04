@@ -245,6 +245,52 @@ const dateTimeFormHtml = `
 </html>
 `;
 
+const duplicateLabelFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Duplicate Labels</title>
+  </head>
+  <body>
+    <section>
+      <div>Personal</div>
+      <div role="list">
+        <div role="listitem" class="Qr7Oae">
+          <div role="heading">Email</div>
+          <div class="gubaDc">Personal email address</div>
+          <input type="text" />
+        </div>
+      </div>
+    </section>
+    <section>
+      <div>Work</div>
+      <div role="list">
+        <div role="listitem" class="Qr7Oae">
+          <div role="heading">Email</div>
+          <div class="gubaDc">Work email address</div>
+          <input type="text" />
+        </div>
+      </div>
+    </section>
+  </body>
+</html>
+`;
+
+const gridOnlyFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Availability Form</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Availability</div>
+      <div role="grid"></div>
+    </div>
+  </body>
+</html>
+`;
+
 function setInteractiveRoleClicks(root: Document) {
   for (const option of root.querySelectorAll<HTMLElement>('[role="radio"], [role="checkbox"]')) {
     option.addEventListener("click", () => {
@@ -690,5 +736,39 @@ describe("content dom", () => {
     expect(fillResult.skippedFieldIds).toEqual(["start_date", "start_time"]);
     expect((document.querySelector('input[name="start_date"]') as HTMLInputElement).value).toBe("2026-04-04");
     expect((document.querySelector('input[name="start_time"]') as HTMLInputElement).value).toBe("09:30");
+  });
+
+  it("matches duplicate labels using section and help text when ids change", () => {
+    document.documentElement.innerHTML = duplicateLabelFormHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSduplicate/viewform");
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="text"]');
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: [
+        {
+          ...scan.fields[1]!,
+          id: "stale_work_email_id",
+        },
+      ],
+      values: {
+        stale_work_email_id: "work@example.com",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["stale_work_email_id"]);
+    expect(inputs[0]!.value).toBe("");
+    expect(inputs[1]!.value).toBe("work@example.com");
+  });
+
+  it("surfaces grid questions as unsupported fields during scan", () => {
+    document.documentElement.innerHTML = gridOnlyFormHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSgridonly/viewform");
+
+    expect(scan.fields).toHaveLength(1);
+    expect(scan.fields[0]).toMatchObject({
+      label: "Availability",
+      type: "grid",
+    });
   });
 });

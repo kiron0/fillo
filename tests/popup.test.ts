@@ -727,6 +727,7 @@ describe("popup", () => {
 
     expect((mock.state.presets as FormPreset[])[0]).toMatchObject({
       unmappedFieldIds: ["full_name"],
+      mappingSchemaVersion: 2,
     });
 
     vi.resetModules();
@@ -789,6 +790,7 @@ describe("popup", () => {
     expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("Alice");
     expect((mock.state.presets as FormPreset[])[0]).toMatchObject({
       mappings: { full_name: "__no_mapping__" },
+      mappingSchemaVersion: 2,
     });
     expect((mock.state.presets as FormPreset[])[0].unmappedFieldIds ?? []).toEqual([]);
   });

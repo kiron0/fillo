@@ -252,7 +252,7 @@ describe("storage", () => {
       updatedAt: 1,
     });
 
-    await expect(importAppData({})).rejects.toThrow("Import payload must include profiles, presets, and settings.");
+    await expect(importAppData({})).rejects.toThrow("Import payload must be a version 1 backup.");
     expect(await getProfiles()).toEqual([
       {
         id: "profile-1",
@@ -262,6 +262,22 @@ describe("storage", () => {
         updatedAt: 1,
       },
     ]);
+  });
+
+  it("rejects backups with an unsupported version", async () => {
+    await expect(
+      importAppData({
+        version: 2,
+        profiles: [],
+        presets: [],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+      }),
+    ).rejects.toThrow("Import payload must be a version 1 backup.");
   });
 
   it("keeps concurrent preset saves from overwriting each other", async () => {
@@ -344,7 +360,7 @@ describe("storage", () => {
     expect(await getPresetByFormKey("locked-form")).toEqual(preset);
   });
 
-  it("keeps real __no_mapping__ profile keys intact in stored presets", async () => {
+  it("migrates legacy __no_mapping__ sentinels into unmappedFieldIds", async () => {
     const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
     chromeWithState.state.presets = [
       {
@@ -369,9 +385,42 @@ describe("storage", () => {
       formTitle: "Registration",
       fields: [],
       values: {},
+      unmappedFieldIds: ["email"],
+      createdAt: 1,
+      updatedAt: 1,
+    });
+  });
+
+  it("keeps real __no_mapping__ profile keys intact in schema version 2 presets", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Registration",
+        formKey: "form-1",
+        formTitle: "Registration",
+        fields: [],
+        values: {},
+        mappings: {
+          email: "__no_mapping__",
+        },
+        mappingSchemaVersion: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ] satisfies FormPreset[];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Registration",
+      formKey: "form-1",
+      formTitle: "Registration",
+      fields: [],
+      values: {},
       mappings: {
         email: "__no_mapping__",
       },
+      mappingSchemaVersion: 2,
       createdAt: 1,
       updatedAt: 1,
     });

@@ -14,15 +14,29 @@ type StorageShape = {
   [STORAGE_KEYS.settings]?: AppSettings;
 };
 
+const LEGACY_NO_MAPPING_SENTINEL = "__no_mapping__";
+
 function normalizePreset(preset: FormPreset): FormPreset {
-  const { mappings: rawMappings, unmappedFieldIds: rawUnmappedFieldIds, ...rest } = preset;
+  const { mappings: rawMappings, unmappedFieldIds: rawUnmappedFieldIds, mappingSchemaVersion, ...rest } = preset;
   const mappings = rawMappings ? { ...rawMappings } : undefined;
-  const unmappedFieldIds = rawUnmappedFieldIds ? Array.from(new Set(rawUnmappedFieldIds)) : undefined;
+  const unmappedFieldIds = new Set(rawUnmappedFieldIds ?? []);
+
+  if (mappingSchemaVersion !== 2 && mappings) {
+    for (const [fieldId, mappingKey] of Object.entries(mappings)) {
+      if (mappingKey === LEGACY_NO_MAPPING_SENTINEL) {
+        delete mappings[fieldId];
+        unmappedFieldIds.add(fieldId);
+      }
+    }
+  }
+
+  const normalizedUnmappedFieldIds = Array.from(unmappedFieldIds);
 
   return {
     ...rest,
     ...(mappings && Object.keys(mappings).length ? { mappings } : {}),
-    ...(unmappedFieldIds?.length ? { unmappedFieldIds } : {}),
+    ...(normalizedUnmappedFieldIds.length ? { unmappedFieldIds: normalizedUnmappedFieldIds } : {}),
+    ...(mappingSchemaVersion === 2 ? { mappingSchemaVersion } : {}),
   };
 }
 
@@ -117,8 +131,12 @@ export async function clearAllDataDirect(): Promise<void> {
 }
 
 export async function importAppDataDirect(payload: ImportedAppData): Promise<void> {
+  if (payload.version !== 1) {
+    throw new Error("Import payload must be a version 1 backup.");
+  }
+
   if (!Array.isArray(payload.profiles) || !Array.isArray(payload.presets) || typeof payload.settings !== "object" || payload.settings === null) {
-    throw new Error("Import payload must include profiles, presets, and settings.");
+    throw new Error("Import payload must include version, profiles, presets, and settings.");
   }
 
   await writeAllDirect({

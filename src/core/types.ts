@@ -55,6 +55,7 @@ export interface FormPreset {
   values: Record<string, FieldValue>;
   mappings?: Record<string, string>;
   unmappedFieldIds?: string[];
+  mappingSchemaVersion?: 2;
   createdAt: number;
   updatedAt: number;
 }
@@ -75,6 +76,8 @@ export interface ExportedAppData {
 }
 
 export interface ImportedAppData {
+  version?: number;
+  exportedAt?: number;
   profiles?: Profile[];
   presets?: FormPreset[];
   settings?: AppSettings;

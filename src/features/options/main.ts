@@ -91,6 +91,10 @@ function isImportedData(value: unknown): value is ImportedAppData {
 
   const payload = value as Record<string, unknown>;
 
+  if (payload.version !== 1) {
+    return false;
+  }
+
   if (!("profiles" in payload) || !Array.isArray(payload.profiles)) {
     return false;
   }
@@ -452,6 +456,14 @@ function syncBackupSectionVisibility(): void {
   backupSection.classList.toggle("hidden", !showBackupSectionCheckbox.checked);
 }
 
+async function runTopLevelAction(task: () => Promise<void>, fallbackMessage: string): Promise<void> {
+  try {
+    await task();
+  } catch (error) {
+    setStatus(error instanceof Error ? error.message : fallbackMessage);
+  }
+}
+
 async function persistSettings(): Promise<void> {
   const settings = readSettingsControls();
   await saveSettings(settings);
@@ -499,49 +511,60 @@ showBackupSectionCheckbox.addEventListener("change", () => {
   void persistSettingsFromControls();
 });
 
-addProfileButton.addEventListener("click", async () => {
-  const profile = createEmptyProfile();
-  await saveProfile(profile);
-  if (!state.profiles.some((item) => item.id === profile.id)) {
-    state.profiles = [...state.profiles, profile];
-  }
-  renderDefaultProfileOptions();
-  if (state.profiles.length === 1) {
-    renderProfiles();
-  } else {
-    profilesContainer.append(createProfileCard(profile));
-  }
-  setStatus("Added a new profile.");
+addProfileButton.addEventListener("click", () => {
+  void runTopLevelAction(async () => {
+    const profile = createEmptyProfile();
+    await saveProfile(profile);
+    if (!state.profiles.some((item) => item.id === profile.id)) {
+      state.profiles = [...state.profiles, profile];
+    }
+    renderDefaultProfileOptions();
+    if (state.profiles.length === 1) {
+      renderProfiles();
+    } else {
+      profilesContainer.append(createProfileCard(profile));
+    }
+    setStatus("Added a new profile.");
+  }, "Unable to add profile.");
 });
 
-exportButton.addEventListener("click", async () => {
-  backupPayload.value = JSON.stringify(await exportAppData(), null, 2);
-  setStatus("Exported local data to the text area.");
+exportButton.addEventListener("click", () => {
+  void runTopLevelAction(async () => {
+    backupPayload.value = JSON.stringify(await exportAppData(), null, 2);
+    setStatus("Exported local data to the text area.");
+  }, "Unable to export local data.");
 });
 
-importButton.addEventListener("click", async () => {
-  try {
-    const payload = JSON.parse(backupPayload.value);
+importButton.addEventListener("click", () => {
+  void runTopLevelAction(async () => {
+    let payload: unknown;
+
+    try {
+      payload = JSON.parse(backupPayload.value);
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : "Invalid import payload.");
+    }
+
     if (!isImportedData(payload)) {
-      throw new Error("Import payload must include profiles, presets, and settings.");
+      throw new Error("Import payload must be a version 1 backup with profiles, presets, and settings.");
     }
 
     await importAppData(payload);
     await refresh();
     setStatus("Imported local data.");
-  } catch (error) {
-    setStatus(error instanceof Error ? error.message : "Invalid import payload.");
-  }
+  }, "Invalid import payload.");
 });
 
-clearDataButton.addEventListener("click", async () => {
-  if (!window.confirm("Clear every saved profile, preset, and setting?")) {
-    return;
-  }
-  await clearAllData();
-  backupPayload.value = "";
-  await refresh();
-  setStatus("Cleared all local data.");
+clearDataButton.addEventListener("click", () => {
+  void runTopLevelAction(async () => {
+    if (!window.confirm("Clear every saved profile, preset, and setting?")) {
+      return;
+    }
+    await clearAllData();
+    backupPayload.value = "";
+    await refresh();
+    setStatus("Cleared all local data.");
+  }, "Unable to clear local data.");
 });
 
 if (!hasChromeRuntime()) {

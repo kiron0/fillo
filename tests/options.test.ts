@@ -363,4 +363,68 @@ describe("options", () => {
 
     expect(draftInput.value).toBe("Beta Draft");
   });
+
+  it("shows an error message when adding a profile fails", async () => {
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    mock.chrome.storage.local.set = (_value: Record<string, unknown>, callback: () => void) => {
+      mock.chrome.runtime.lastError = { message: "Disk full" } as chrome.runtime.LastError;
+      callback();
+      delete mock.chrome.runtime.lastError;
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    document.querySelector<HTMLButtonElement>("#add-profile")!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLParagraphElement>("#status")!.textContent).toBe("Disk full");
+    });
+  });
+
+  it("rejects backup payloads without version 1", async () => {
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const backupPayload = document.querySelector<HTMLTextAreaElement>("#backup-payload")!;
+    backupPayload.value = JSON.stringify({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    document.querySelector<HTMLButtonElement>("#import-data")!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLParagraphElement>("#status")!.textContent).toBe(
+        "Import payload must be a version 1 backup with profiles, presets, and settings.",
+      );
+    });
+  });
 });

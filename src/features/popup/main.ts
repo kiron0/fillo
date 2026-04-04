@@ -45,7 +45,6 @@ const state: PopupState = {
 };
 
 const AUTOSAVE_DELAY_MS = 500;
-const LEGACY_NO_MAPPING_SENTINEL = "__no_mapping__";
 
 const formTitle = document.querySelector<HTMLHeadingElement>("#form-title")!;
 const formMeta = document.querySelector<HTMLParagraphElement>("#form-meta")!;
@@ -131,10 +130,6 @@ function renderProfileSelect(): void {
     }
     profileSelect.append(option);
   }
-}
-
-function hasRealProfileKey(key: string): boolean {
-  return state.profiles.some((profile) => profile.values[key] !== undefined);
 }
 
 function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
@@ -251,6 +246,7 @@ function buildPresetPayload(): FormPreset | null {
     values,
     mappings: state.mappings,
     ...(state.unmappedFieldIds.size ? { unmappedFieldIds: Array.from(state.unmappedFieldIds) } : {}),
+    mappingSchemaVersion: 2,
     createdAt: state.preset?.createdAt ?? now,
     updatedAt: now,
   };
@@ -611,9 +607,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
     const currentMapping = previousMappings[field.id];
     const presetMapping = presetMappings[field.id];
     const isMappingSuppressed = state.suppressedMappingFieldIds.has(field.id);
-    const hasLegacyNoMapping = presetMapping === LEGACY_NO_MAPPING_SENTINEL && !hasRealProfileKey(LEGACY_NO_MAPPING_SENTINEL);
-    const hasExplicitNoMapping =
-      previousUnmappedFieldIds.has(field.id) || presetUnmappedFieldIds.has(field.id) || hasLegacyNoMapping;
+    const hasExplicitNoMapping = previousUnmappedFieldIds.has(field.id) || presetUnmappedFieldIds.has(field.id);
     const mappingKey =
       isMappingSuppressed || hasExplicitNoMapping
         ? undefined

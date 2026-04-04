@@ -636,7 +636,7 @@ function handleClear(): void {
   state.dirtyFieldIds.clear();
   renderFields();
   schedulePresetSave();
-  setStatus("Cleared unsaved values and mappings in the popup.", "idle");
+  setStatus("Cleared values and mappings for this form.", "idle");
 }
 
 async function handleResetPreset(): Promise<void> {

@@ -18,7 +18,6 @@ const defaultProfileSelect = document.querySelector<HTMLSelectElement>("#default
 const autoLoadCheckbox = document.querySelector<HTMLInputElement>("#auto-load-profile")!;
 const confirmBeforeFillCheckbox = document.querySelector<HTMLInputElement>("#confirm-before-fill")!;
 const showBackupSectionCheckbox = document.querySelector<HTMLInputElement>("#show-backup-section")!;
-const saveSettingsButton = document.querySelector<HTMLButtonElement>("#save-settings")!;
 const addProfileButton = document.querySelector<HTMLButtonElement>("#add-profile")!;
 const profilesContainer = document.querySelector<HTMLDivElement>("#profiles")!;
 const presetsContainer = document.querySelector<HTMLDivElement>("#presets")!;
@@ -297,27 +296,37 @@ async function persistSettings(): Promise<void> {
   state.settings = await getSettings();
 }
 
-saveSettingsButton.addEventListener("click", async () => {
-  await persistSettings();
-  await refresh();
-  setStatus("Saved settings.");
-});
+async function persistSettingsFromControls(): Promise<void> {
+  const previousSettings = { ...state.settings };
+  try {
+    await persistSettings();
+    await refresh();
+  } catch (error) {
+    state.settings = previousSettings;
+    renderDefaultProfileOptions();
+    autoLoadCheckbox.checked = previousSettings.autoLoadMatchingProfile;
+    confirmBeforeFillCheckbox.checked = previousSettings.confirmBeforeFill;
+    showBackupSectionCheckbox.checked = previousSettings.showBackupSection;
+    backupSection.classList.toggle("hidden", !previousSettings.showBackupSection);
+    setStatus(error instanceof Error ? error.message : "Unable to save settings.");
+  }
+}
 
 defaultProfileSelect.addEventListener("change", () => {
-  void persistSettings();
+  void persistSettingsFromControls();
 });
 
 autoLoadCheckbox.addEventListener("change", () => {
-  void persistSettings();
+  void persistSettingsFromControls();
 });
 
 confirmBeforeFillCheckbox.addEventListener("change", () => {
-  void persistSettings();
+  void persistSettingsFromControls();
 });
 
 showBackupSectionCheckbox.addEventListener("change", () => {
   syncBackupSectionVisibility();
-  void persistSettings();
+  void persistSettingsFromControls();
 });
 
 addProfileButton.addEventListener("click", async () => {

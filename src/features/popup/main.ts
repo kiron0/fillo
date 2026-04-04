@@ -515,6 +515,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
     state.unmappedFieldIds.add(fieldId);
     state.suppressedMappingFieldIds.add(fieldId);
     state.autoBrokenMappings.delete(fieldId);
+    state.clearedFieldIds.delete(fieldId);
 
     if (field && profile && previousMapping) {
       const previousMappedValue = coerceFieldValueForField(field, profile.values[previousMapping]);

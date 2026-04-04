@@ -624,6 +624,76 @@ describe("popup", () => {
     });
   });
 
+  it("does not preserve an old saved mapping after Clear when the user explicitly chooses No mapping", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Alice" },
+      mappings: { full_name: "fullName" },
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [preset],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#clear-values")!.click();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    const savedPreset = (mock.state.presets as FormPreset[])[0]!;
+    expect(savedPreset.mappings ?? {}).toEqual({});
+    expect(savedPreset.unmappedFieldIds ?? []).toEqual(["full_name"]);
+  });
+
   it("does not resurrect a removed mapping when switching profiles before autosave", async () => {
     const profiles: Profile[] = [
       {

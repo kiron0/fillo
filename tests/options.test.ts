@@ -266,6 +266,43 @@ describe("options", () => {
     expect(document.querySelector(".card .profile-meta")?.textContent).toContain("saved value");
   });
 
+  it("keeps the first existing profile meta after adding another profile", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice", email: "alice@example.com" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const firstMeta = document.querySelector<HTMLElement>('[data-profile-id="profile-1"] .profile-meta')!;
+    expect(firstMeta.textContent).toContain("2 saved values");
+
+    document.querySelector<HTMLButtonElement>("#add-profile")!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelectorAll<HTMLElement>(".card[data-profile-id]")).toHaveLength(2);
+    });
+
+    expect(document.querySelector<HTMLElement>('[data-profile-id="profile-1"] .profile-meta')?.textContent).toContain("2 saved values");
+  });
+
   it("preserves profile drafts when presets change and other profiles are deleted", async () => {
     const profiles: Profile[] = [
       {

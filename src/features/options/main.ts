@@ -506,11 +506,9 @@ addProfileButton.addEventListener("click", async () => {
     state.profiles = [...state.profiles, profile];
   }
   renderDefaultProfileOptions();
-  const emptyProfilesMessage = profilesContainer.querySelector(".profile-meta");
   if (state.profiles.length === 1) {
     renderProfiles();
   } else {
-    emptyProfilesMessage?.remove();
     profilesContainer.append(createProfileCard(profile));
   }
   setStatus("Added a new profile.");

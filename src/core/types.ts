@@ -54,6 +54,7 @@ export interface FormPreset {
   fields: DetectedField[];
   values: Record<string, FieldValue>;
   mappings?: Record<string, string>;
+  unmappedFieldIds?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -107,7 +108,18 @@ export interface FillRequest {
 
 export type BackgroundRequest =
   | { type: "GET_ACTIVE_FORM_CONTEXT" }
-  | { type: "FILL_ACTIVE_FORM"; payload: FillRequest };
+  | { type: "FILL_ACTIVE_FORM"; payload: FillRequest }
+  | {
+      type: "RUN_STORAGE_MUTATION";
+      payload:
+        | { kind: "save_profile"; profile: Profile }
+        | { kind: "delete_profile"; profileId: string }
+        | { kind: "save_preset"; preset: FormPreset }
+        | { kind: "delete_preset"; presetId: string }
+        | { kind: "save_settings"; settings: AppSettings }
+        | { kind: "clear_all_data" }
+        | { kind: "import_app_data"; data: ImportedAppData };
+    };
 
 export type ContentRequest =
   | { type: "PING" }

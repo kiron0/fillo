@@ -725,11 +725,72 @@ describe("popup", () => {
     mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
     await vi.advanceTimersByTimeAsync(500);
 
+    expect((mock.state.presets as FormPreset[])[0]).toMatchObject({
+      unmappedFieldIds: ["full_name"],
+    });
+
     vi.resetModules();
     document.documentElement.innerHTML = popupHtml;
     await loadPopupModule();
 
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
+  });
+
+  it("allows mapping to a real profile key named __no_mapping__", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: {
+          __no_mapping__: "Alice",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "__no_mapping__";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("Alice");
+    expect((mock.state.presets as FormPreset[])[0]).toMatchObject({
+      mappings: { full_name: "__no_mapping__" },
+    });
+    expect((mock.state.presets as FormPreset[])[0].unmappedFieldIds ?? []).toEqual([]);
   });
 
   it("waits for an in-flight preset save before filling the form", async () => {

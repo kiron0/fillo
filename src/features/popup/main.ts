@@ -20,6 +20,7 @@ type PopupState = {
   selectedProfileId: string | null;
   values: Record<string, FieldValue>;
   mappings: Record<string, string>;
+  unmappedFieldIds: Set<string>;
   dirtyFieldIds: Set<string>;
   clearedFieldIds: Set<string>;
   suppressedMappingFieldIds: Set<string>;
@@ -34,6 +35,7 @@ const state: PopupState = {
   selectedProfileId: null,
   values: {},
   mappings: {},
+  unmappedFieldIds: new Set<string>(),
   dirtyFieldIds: new Set<string>(),
   clearedFieldIds: new Set<string>(),
   suppressedMappingFieldIds: new Set<string>(),
@@ -43,7 +45,7 @@ const state: PopupState = {
 };
 
 const AUTOSAVE_DELAY_MS = 500;
-const NO_MAPPING_SENTINEL = "__no_mapping__";
+const LEGACY_NO_MAPPING_SENTINEL = "__no_mapping__";
 
 const formTitle = document.querySelector<HTMLHeadingElement>("#form-title")!;
 const formMeta = document.querySelector<HTMLParagraphElement>("#form-meta")!;
@@ -131,6 +133,10 @@ function renderProfileSelect(): void {
   }
 }
 
+function hasRealProfileKey(key: string): boolean {
+  return state.profiles.some((profile) => profile.values[key] !== undefined);
+}
+
 function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
   state.values[fieldId] = value;
   state.clearedFieldIds.delete(fieldId);
@@ -181,10 +187,11 @@ function updateFieldMapping(fieldId: string, value: string): void {
   const previousMapping = state.mappings[fieldId];
 
   if (!value) {
-    state.mappings[fieldId] = NO_MAPPING_SENTINEL;
+    delete state.mappings[fieldId];
+    state.unmappedFieldIds.add(fieldId);
     state.suppressedMappingFieldIds.add(fieldId);
 
-    if (profile && previousMapping && previousMapping !== NO_MAPPING_SENTINEL) {
+    if (profile && previousMapping) {
       const previousMappedValue = profile.values[previousMapping] as FieldValue | undefined;
       if (fieldValuesEqual(state.values[fieldId], previousMappedValue)) {
         const presetValue = state.preset?.values[fieldId];
@@ -202,6 +209,7 @@ function updateFieldMapping(fieldId: string, value: string): void {
   }
 
   state.mappings[fieldId] = value;
+  state.unmappedFieldIds.delete(fieldId);
   state.suppressedMappingFieldIds.delete(fieldId);
   state.clearedFieldIds.delete(fieldId);
 
@@ -227,7 +235,7 @@ function buildPresetPayload(): FormPreset | null {
     Object.entries(state.values).filter(([, value]) => hasPersistableFieldValue(value)),
   ) as Record<string, FieldValue>;
   const hasValues = Object.keys(values).length > 0;
-  const hasMappings = Object.keys(state.mappings).length > 0;
+  const hasMappings = Object.keys(state.mappings).length > 0 || state.unmappedFieldIds.size > 0;
   if (!hasValues && !hasMappings) {
     return null;
   }
@@ -242,6 +250,7 @@ function buildPresetPayload(): FormPreset | null {
     fields: state.activeForm.fields,
     values,
     mappings: state.mappings,
+    ...(state.unmappedFieldIds.size ? { unmappedFieldIds: Array.from(state.unmappedFieldIds) } : {}),
     createdAt: state.preset?.createdAt ?? now,
     updatedAt: now,
   };
@@ -279,7 +288,9 @@ function runPresetPersist(showStatus = false): Promise<void> {
 async function flushPendingPresetSave(): Promise<void> {
   const hadScheduledSave = autosaveTimer !== null;
   if (hadScheduledSave) {
-    window.clearTimeout(autosaveTimer);
+    if (autosaveTimer !== null) {
+      window.clearTimeout(autosaveTimer);
+    }
     autosaveTimer = null;
   }
 
@@ -548,7 +559,7 @@ function renderFields(): void {
       const noneOption = document.createElement("option");
       noneOption.value = "";
       noneOption.textContent = "No mapping";
-      noneOption.selected = !state.mappings[field.id] || state.mappings[field.id] === NO_MAPPING_SENTINEL;
+      noneOption.selected = state.unmappedFieldIds.has(field.id) || !state.mappings[field.id];
       mappingSelect.append(noneOption);
 
       for (const key of profileKeys) {
@@ -577,6 +588,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
   const previousProfile = getSelectedProfile();
   const previousValues = { ...state.values };
   const previousMappings = { ...state.mappings };
+  const previousUnmappedFieldIds = new Set(state.unmappedFieldIds);
   state.selectedProfileId = normalizeSelectedProfileId(profileId);
   const profile = getSelectedProfile();
 
@@ -586,8 +598,10 @@ function applyProfile(profileId: string | null, autosave = true): void {
 
   const presetValues = state.preset?.values ?? {};
   const presetMappings = state.preset?.mappings ?? {};
+  const presetUnmappedFieldIds = new Set(state.preset?.unmappedFieldIds ?? []);
   const nextValues: Record<string, FieldValue> = {};
   const nextMappings: Record<string, string> = {};
+  const nextUnmappedFieldIds = new Set<string>();
 
   for (const field of state.activeForm.fields) {
     if (state.clearedFieldIds.has(field.id)) {
@@ -597,7 +611,9 @@ function applyProfile(profileId: string | null, autosave = true): void {
     const currentMapping = previousMappings[field.id];
     const presetMapping = presetMappings[field.id];
     const isMappingSuppressed = state.suppressedMappingFieldIds.has(field.id);
-    const hasExplicitNoMapping = currentMapping === NO_MAPPING_SENTINEL || presetMapping === NO_MAPPING_SENTINEL;
+    const hasLegacyNoMapping = presetMapping === LEGACY_NO_MAPPING_SENTINEL && !hasRealProfileKey(LEGACY_NO_MAPPING_SENTINEL);
+    const hasExplicitNoMapping =
+      previousUnmappedFieldIds.has(field.id) || presetUnmappedFieldIds.has(field.id) || hasLegacyNoMapping;
     const mappingKey =
       isMappingSuppressed || hasExplicitNoMapping
         ? undefined
@@ -608,7 +624,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
     if (mappingKey) {
       nextMappings[field.id] = mappingKey;
     } else if (hasExplicitNoMapping && !isMappingSuppressed) {
-      nextMappings[field.id] = NO_MAPPING_SENTINEL;
+      nextUnmappedFieldIds.add(field.id);
     }
 
     if (state.dirtyFieldIds.has(field.id) && previousValues[field.id] !== undefined) {
@@ -642,6 +658,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
 
   state.values = nextValues;
   state.mappings = nextMappings;
+  state.unmappedFieldIds = nextUnmappedFieldIds;
   renderProfileSelect();
   renderPresetActions();
   renderFields();
@@ -742,6 +759,7 @@ function handleClear(): void {
   }
   state.values = {};
   state.mappings = {};
+  state.unmappedFieldIds.clear();
   state.dirtyFieldIds.clear();
   renderFields();
   setStatus("Cleared current popup values and mappings.", "idle");
@@ -765,6 +783,7 @@ async function handleResetPreset(): Promise<void> {
   state.preset = null;
   state.values = {};
   state.mappings = {};
+  state.unmappedFieldIds.clear();
   state.dirtyFieldIds.clear();
   state.clearedFieldIds.clear();
   state.suppressedMappingFieldIds.clear();

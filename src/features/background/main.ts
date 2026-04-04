@@ -1,8 +1,18 @@
 import { scriptingExecuteScript, tabsQuery, tabsSendMessage } from "../../core/chrome-api";
+import {
+  clearAllDataDirect,
+  deletePresetDirect,
+  deleteProfileDirect,
+  importAppDataDirect,
+  savePresetDirect,
+  saveProfileDirect,
+  saveSettingsDirect,
+} from "../../core/storage-ops";
 import type { ActiveFormLookup, BackgroundRequest, ContentRequest, FillResult, MessageResponse, ScanResult } from "../../core/types";
 
 const SCAN_RETRY_ATTEMPTS = 8;
 const SCAN_RETRY_DELAY_MS = 300;
+let storageMutationQueue: Promise<void> = Promise.resolve();
 
 async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
   const tabs = await tabsQuery({ active: true, currentWindow: true });
@@ -68,6 +78,15 @@ async function scanActiveFormWithRetry(tabId: number): Promise<ScanResult> {
   }
 
   throw new Error("Unable to scan the active Google Form.");
+}
+
+function enqueueStorageMutation<T>(action: () => Promise<T>): Promise<T> {
+  const run = storageMutationQueue.then(() => action());
+  storageMutationQueue = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  return run;
 }
 
 chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendResponse) => {
@@ -137,6 +156,40 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
             ok: true,
             data: result,
           } satisfies MessageResponse<FillResult>);
+          return;
+        }
+        case "RUN_STORAGE_MUTATION": {
+          await enqueueStorageMutation(async () => {
+            switch (message.payload.kind) {
+              case "save_profile":
+                await saveProfileDirect(message.payload.profile);
+                return;
+              case "delete_profile":
+                await deleteProfileDirect(message.payload.profileId);
+                return;
+              case "save_preset":
+                await savePresetDirect(message.payload.preset);
+                return;
+              case "delete_preset":
+                await deletePresetDirect(message.payload.presetId);
+                return;
+              case "save_settings":
+                await saveSettingsDirect(message.payload.settings);
+                return;
+              case "clear_all_data":
+                await clearAllDataDirect();
+                return;
+              case "import_app_data":
+                await importAppDataDirect(message.payload.data);
+                return;
+              default:
+                throw new Error("Unsupported storage mutation");
+            }
+          });
+          sendResponse({
+            ok: true,
+            data: null,
+          } satisfies MessageResponse<null>);
           return;
         }
         default:

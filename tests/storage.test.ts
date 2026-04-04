@@ -13,6 +13,7 @@ import type { FormPreset, Profile } from "../src/core/types";
 
 function createStorageMock() {
   const state: Record<string, unknown> = {};
+  let queue = Promise.resolve();
 
   return {
     state,
@@ -33,7 +34,131 @@ function createStorageMock() {
         },
       },
     },
-    runtime: {},
+    runtime: {
+      sendMessage(
+        message: {
+          type: string;
+          payload?:
+            | { kind: "save_profile"; profile: Profile }
+            | { kind: "save_preset"; preset: FormPreset }
+            | { kind: "delete_profile"; profileId: string }
+            | { kind: "delete_preset"; presetId: string }
+            | {
+                kind: "save_settings";
+                settings: {
+                  defaultProfileId: string | null;
+                  autoLoadMatchingProfile: boolean;
+                  confirmBeforeFill: boolean;
+                  showBackupSection: boolean;
+                };
+              }
+            | { kind: "clear_all_data" }
+            | {
+                kind: "import_app_data";
+                data: {
+                  profiles?: Profile[];
+                  presets?: FormPreset[];
+                  settings?: Record<string, unknown>;
+                };
+              };
+        },
+        callback: (response: unknown) => void,
+      ) {
+        if (message.type !== "RUN_STORAGE_MUTATION" || !message.payload) {
+          callback({ ok: false, error: "Unknown message" });
+          return;
+        }
+
+        const run = queue.then(async () => {
+          switch (message.payload.kind) {
+            case "save_profile": {
+              const profiles = Array.isArray(state.profiles) ? ([...state.profiles] as Profile[]) : [];
+              const existingIndex = profiles.findIndex((item) => item.id === message.payload.profile.id);
+              if (existingIndex >= 0) {
+                profiles[existingIndex] = message.payload.profile;
+              } else {
+                profiles.push(message.payload.profile);
+              }
+              state.profiles = profiles;
+              callback({ ok: true, data: null });
+              return;
+            }
+            case "save_preset": {
+              const presets = Array.isArray(state.presets) ? ([...state.presets] as FormPreset[]) : [];
+              const existingIndex = presets.findIndex(
+                (item) => item.id === message.payload.preset.id || item.formKey === message.payload.preset.formKey,
+              );
+              if (existingIndex >= 0) {
+                presets[existingIndex] = message.payload.preset;
+              } else {
+                presets.push(message.payload.preset);
+              }
+              state.presets = presets;
+              callback({ ok: true, data: null });
+              return;
+            }
+            case "delete_profile": {
+              const profiles = Array.isArray(state.profiles) ? ([...state.profiles] as Profile[]) : [];
+              state.profiles = profiles.filter((item) => item.id !== message.payload.profileId);
+              const settings = (state.settings ?? {
+                defaultProfileId: null,
+                autoLoadMatchingProfile: true,
+                confirmBeforeFill: true,
+                showBackupSection: false,
+              }) as Record<string, unknown>;
+              if (settings.defaultProfileId === message.payload.profileId) {
+                state.settings = {
+                  ...settings,
+                  defaultProfileId: null,
+                };
+              }
+              callback({ ok: true, data: null });
+              return;
+            }
+            case "delete_preset": {
+              const presets = Array.isArray(state.presets) ? ([...state.presets] as FormPreset[]) : [];
+              state.presets = presets.filter((item) => item.id !== message.payload.presetId);
+              callback({ ok: true, data: null });
+              return;
+            }
+            case "save_settings":
+              state.settings = message.payload.settings;
+              callback({ ok: true, data: null });
+              return;
+            case "clear_all_data":
+              state.profiles = [];
+              state.presets = [];
+              state.settings = {
+                defaultProfileId: null,
+                autoLoadMatchingProfile: true,
+                confirmBeforeFill: true,
+                showBackupSection: false,
+              };
+              callback({ ok: true, data: null });
+              return;
+            case "import_app_data":
+              state.profiles = message.payload.data.profiles ?? [];
+              state.presets = message.payload.data.presets ?? [];
+              state.settings = {
+                defaultProfileId: null,
+                autoLoadMatchingProfile: true,
+                confirmBeforeFill: true,
+                showBackupSection: false,
+                ...(message.payload.data.settings ?? {}),
+              };
+              callback({ ok: true, data: null });
+              return;
+            default:
+              callback({ ok: false, error: "Unsupported mutation" });
+          }
+        });
+
+        queue = run.then(
+          () => undefined,
+          () => undefined,
+        );
+      },
+    },
   };
 }
 
@@ -174,37 +299,6 @@ describe("storage", () => {
     expect(exported.presets).toHaveLength(2);
   });
 
-  it("waits long enough for an abandoned preset lock to expire", async () => {
-    vi.useFakeTimers();
-
-    try {
-      const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
-      chromeWithState.state.__lock__presets = {
-        token: "stale-lock",
-        expiresAt: Date.now() + 50,
-      };
-
-      const preset: FormPreset = {
-        id: "preset-1",
-        name: "Locked Form",
-        formKey: "locked-form",
-        formTitle: "Locked Form",
-        fields: [],
-        values: { fullName: "Toufiq Hasan" },
-        createdAt: 1,
-        updatedAt: 1,
-      };
-
-      const savePromise = savePreset(preset);
-      await vi.advanceTimersByTimeAsync(100);
-      await savePromise;
-
-      expect(await getPresetByFormKey("locked-form")).toEqual(preset);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
   it("uses the browser lock manager when available", async () => {
     const navigatorWithLocks = {
       locks: {
@@ -231,7 +325,7 @@ describe("storage", () => {
     expect(navigatorWithLocks.locks.request).toHaveBeenCalledWith("fillo-storage-write", expect.any(Function));
   });
 
-  it("fails clearly when the Web Locks API is unavailable", async () => {
+  it("falls back to background-serialized writes when the Web Locks API is unavailable", async () => {
     vi.stubGlobal("navigator", {});
 
     const preset: FormPreset = {
@@ -245,6 +339,41 @@ describe("storage", () => {
       updatedAt: 1,
     };
 
-    await expect(savePreset(preset)).rejects.toThrow("Web Locks API is not available in this context.");
+    await savePreset(preset);
+
+    expect(await getPresetByFormKey("locked-form")).toEqual(preset);
+  });
+
+  it("keeps real __no_mapping__ profile keys intact in stored presets", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Registration",
+        formKey: "form-1",
+        formTitle: "Registration",
+        fields: [],
+        values: {},
+        mappings: {
+          email: "__no_mapping__",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ] satisfies FormPreset[];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Registration",
+      formKey: "form-1",
+      formTitle: "Registration",
+      fields: [],
+      values: {},
+      mappings: {
+        email: "__no_mapping__",
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
   });
 });

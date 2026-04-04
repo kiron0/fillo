@@ -1897,6 +1897,60 @@ describe("popup", () => {
     expect(Array.from(mappingSelect.options).some((option) => option.value === "validBirthday")).toBe(true);
   });
 
+  it("does not treat a raw Other profile value as a valid radio mapping", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: {
+          batchChoice: "Other",
+          validBatchOther: "18",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Batch Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "radio-other-form",
+      fields: [
+        {
+          id: "batch",
+          label: "Batch",
+          normalizedLabel: "batch",
+          type: "radio",
+          required: true,
+          options: ["17", "16", "Other"],
+          otherOption: "Other",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    expect(Array.from(mappingSelect.options).some((option) => option.value === "batchChoice")).toBe(false);
+    expect(Array.from(mappingSelect.options).some((option) => option.value === "validBatchOther")).toBe(true);
+    expect(mappingSelect.value).toBe("");
+  });
+
   it("reapplies the mapped value after reverting a manual edit back to it", async () => {
     const profiles: Profile[] = [
       {

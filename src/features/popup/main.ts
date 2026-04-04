@@ -452,6 +452,10 @@ function coerceFieldValueForField(field: DetectedField, value: FieldValue | Prof
       const normalizedValue = String(value);
       const matchedOption = findMatchingOption(field, normalizedValue);
       if (matchedOption) {
+        if ((field.type === "radio" || field.type === "scale") && field.otherOption && optionEquals(matchedOption, field.otherOption)) {
+          return undefined;
+        }
+
         return matchedOption;
       }
 

@@ -374,6 +374,24 @@ describe("content dom", () => {
     expect(document.querySelectorAll<HTMLElement>('[role="radio"]')[2].getAttribute("aria-checked")).toBe("false");
   });
 
+  it("does not select a raw Other radio payload without attached text", () => {
+    document.documentElement.innerHTML = radioWithOtherHtml;
+    (document.querySelector('input[name="batch_other"]') as HTMLInputElement).value = "17A";
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSradiootherraw/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        batch_other: "Other",
+      },
+    });
+
+    expect(fillResult.skippedFieldIds).toEqual(["batch_other"]);
+    expect((document.querySelector('input[name="batch_other"]') as HTMLInputElement).value).toBe("17A");
+    expect(document.querySelectorAll<HTMLElement>('[role="radio"]')[2].getAttribute("aria-checked")).toBe("false");
+  });
+
   it("adds a synthetic Other option when a radio choice only exposes an attached text input", () => {
     document.documentElement.innerHTML = radioWithSyntheticOtherHtml;
     const result = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLS999/viewform");

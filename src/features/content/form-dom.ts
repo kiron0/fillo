@@ -720,7 +720,11 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
       case "radio":
       case "scale":
         if (typeof value === "string" || typeof value === "number") {
-          success = Boolean(selectRadioOption(descriptor.container, String(value)));
+          if (referenceField.otherOption && optionEquals(referenceField.otherOption, String(value))) {
+            success = false;
+          } else {
+            success = Boolean(selectRadioOption(descriptor.container, String(value)));
+          }
         } else if (isChoiceWithOtherValue(value) && typeof value.selected === "string") {
           if (referenceField.otherOption && optionEquals(referenceField.otherOption, value.selected) && !value.otherText.trim()) {
             success = false;

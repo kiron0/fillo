@@ -707,8 +707,13 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
         if (Array.isArray(value)) {
           success = fillCheckboxGroup(descriptor.container, value.map(String));
         } else if (isChoiceWithOtherValue(value) && Array.isArray(value.selected)) {
+          const normalizedSelected = referenceField.otherOption && !value.otherText.trim()
+            ? value.selected.filter((item) => !optionEquals(item, referenceField.otherOption as string))
+            : value.selected;
+
           if (
             referenceField.otherOption &&
+            normalizedSelected.length === value.selected.length &&
             value.selected.some((item) => optionEquals(item, referenceField.otherOption as string)) &&
             !value.otherText.trim()
           ) {
@@ -716,11 +721,11 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
             break;
           }
 
-          success = fillCheckboxGroup(descriptor.container, value.selected.map(String));
+          success = fillCheckboxGroup(descriptor.container, normalizedSelected.map(String));
           if (
             success &&
             referenceField.otherOption &&
-            value.selected.some((item) => optionEquals(item, referenceField.otherOption as string))
+            normalizedSelected.some((item) => optionEquals(item, referenceField.otherOption as string))
           ) {
             success = fillChoiceAttachedText(findAttachedOtherChoice(descriptor.container, "checkbox"), "checkbox", descriptor.container, value.otherText);
           }

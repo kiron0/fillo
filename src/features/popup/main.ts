@@ -137,6 +137,15 @@ function renderProfileSelect(): void {
   }
 }
 
+function syncFieldMappingControl(fieldId: string): void {
+  const mappingSelect = fieldsContainer.querySelector<HTMLSelectElement>(`[data-field-id="${fieldId}"] .mapping-row select`);
+  if (!mappingSelect) {
+    return;
+  }
+
+  mappingSelect.value = state.unmappedFieldIds.has(fieldId) ? "" : (state.mappings[fieldId] ?? "");
+}
+
 function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
   let shouldMarkDirty = markDirty;
   let mappingStateChanged = false;
@@ -190,7 +199,7 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
   schedulePresetSave();
 
   if (mappingStateChanged) {
-    renderFields();
+    syncFieldMappingControl(fieldId);
   }
 }
 
@@ -552,10 +561,14 @@ async function persistPreset(showStatus = false): Promise<void> {
   const preset = buildPresetPayload();
   pendingPresetId = preset?.id ?? state.preset?.id ?? pendingPresetId;
   if (!preset) {
-    if (state.preset) {
-      await deletePreset(state.preset.id);
+    const presetIdToDelete = state.preset?.id ?? pendingPresetId;
+    if (presetIdToDelete) {
+      await deletePreset(presetIdToDelete);
       if (commitVersion === presetCommitVersion) {
         state.preset = null;
+        if (pendingPresetId === presetIdToDelete) {
+          pendingPresetId = null;
+        }
         renderPresetActions();
       }
     }
@@ -818,6 +831,7 @@ function renderFields(): void {
   for (const field of state.activeForm.fields) {
     const card = document.createElement("article");
     card.className = "field-card";
+    card.dataset.fieldId = field.id;
 
     const header = document.createElement("div");
     header.className = "field-head";

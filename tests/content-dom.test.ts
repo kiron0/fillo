@@ -464,6 +464,29 @@ describe("content dom", () => {
     expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[1].getAttribute("aria-checked")).toBe("false");
   });
 
+  it("still fills non-Other checkbox choices when stale payloads include Other with blank text", () => {
+    document.documentElement.innerHTML = checkboxOtherBindingHtml;
+    setInteractiveRoleClicks(document);
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScheckboxmixedblank/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        courses_other: {
+          kind: "choice_with_other",
+          selected: ["Math", "Other"],
+          otherText: "   ",
+        },
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["courses_other"]);
+    expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[0].getAttribute("aria-checked")).toBe("true");
+    expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[1].getAttribute("aria-checked")).toBe("false");
+    expect((document.querySelector('input[name="courses_other"]') as HTMLInputElement).value).toBe("");
+  });
+
   it("does not report success or clear existing selections when checkbox targets do not match", () => {
     document.documentElement.innerHTML = formHtml;
     setInteractiveRoleClicks(document);

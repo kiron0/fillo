@@ -301,10 +301,13 @@ describe("popup", () => {
     await loadPopupModule();
 
     const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.focus();
     input.value = "Manual Name";
     input.dispatchEvent(new Event("input", { bubbles: true }));
 
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
+    expect(document.activeElement).toBe(input);
+    expect(input.isConnected).toBe(true);
   });
 
   it("resets only the current form preset", async () => {
@@ -1817,6 +1820,111 @@ describe("popup", () => {
     if (releasePendingSave) {
       releasePendingSave();
     }
+  });
+
+  it("deletes a brand-new preset if a later autosave clears it before the first write finishes", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    let releaseStorageWrite: (() => void) | null = null;
+    const state: Record<string, unknown> = {
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    };
+
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(Object.fromEntries(keys.map((key) => [key, state[key]])));
+          },
+          set(value: Record<string, unknown>, callback: () => void) {
+            Object.assign(state, value);
+            if ("presets" in value && releaseStorageWrite === null) {
+              releaseStorageWrite = callback;
+              return;
+            }
+            callback();
+          },
+          remove(keys: string[], callback: () => void) {
+            for (const key of keys) {
+              delete state[key];
+            }
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({
+              ok: true,
+              data: {
+                status: "ready",
+                context: activeForm,
+              },
+            });
+            return;
+          }
+
+          if (message.type === "FILL_ACTIVE_FORM") {
+            callback({
+              ok: true,
+              data: {
+                filledFieldIds: [],
+                skippedFieldIds: [],
+              },
+            });
+            return;
+          }
+
+          callback({ ok: false, error: "Unknown message" });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Manual Name";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(500);
+
+    input.value = "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(500);
+
+    const releasePendingSave = releaseStorageWrite as (() => void) | null;
+    if (releasePendingSave) {
+      releasePendingSave();
+    }
+
+    await vi.waitFor(() => {
+      expect((state.presets as FormPreset[] | undefined) ?? []).toEqual([]);
+    });
   });
 
   it("does not autosave or fill an incomplete Other selection", async () => {

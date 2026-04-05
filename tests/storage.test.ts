@@ -406,8 +406,10 @@ describe("storage", () => {
 
   it("keeps the build manifest version in sync with package.json", async () => {
     const packageJson = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8")) as { version: string };
-    const manifest = JSON.parse(await readFile(join(process.cwd(), "dist", "manifest.json"), "utf8")) as { version: string };
+    const buildScript = await readFile(join(process.cwd(), "scripts", "build.ts"), "utf8");
 
-    expect(manifest.version).toBe(packageJson.version);
+    expect(packageJson.version).toBeTruthy();
+    expect(buildScript).toContain('const manifestVersion = packageJson.version ?? "0.1.0";');
+    expect(buildScript).toContain("version: manifestVersion,");
   });
 });

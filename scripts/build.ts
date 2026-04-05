@@ -10,6 +10,10 @@ const staticFiles = [
   ["src/popup/popup.css", "popup.css"],
   ["src/options/options.html", "options.html"],
   ["src/options/options.css", "options.css"],
+  ["src/assets/icons/icon-16.png", "icons/icon-16.png"],
+  ["src/assets/icons/icon-32.png", "icons/icon-32.png"],
+  ["src/assets/icons/icon-48.png", "icons/icon-48.png"],
+  ["src/assets/icons/icon-128.png", "icons/icon-128.png"],
   ["src/assets/fonts/space-grotesk-variable.woff2", "fonts/space-grotesk-variable.woff2"],
   ["src/assets/fonts/OFL.txt", "fonts/OFL.txt"],
 ] as const;
@@ -36,6 +40,12 @@ const manifest = {
   name: "Fillo",
   version: manifestVersion,
   description: "Save reusable values and fill Google Forms without auto-submitting.",
+  icons: {
+    16: "icons/icon-16.png",
+    32: "icons/icon-32.png",
+    48: "icons/icon-48.png",
+    128: "icons/icon-128.png",
+  },
   permissions: ["storage", "activeTab", "scripting"],
   host_permissions: ["https://docs.google.com/forms/*", "https://forms.gle/*"],
   background: {
@@ -45,6 +55,11 @@ const manifest = {
   action: {
     default_title: "Fillo",
     default_popup: "popup.html",
+    default_icon: {
+      16: "icons/icon-16.png",
+      32: "icons/icon-32.png",
+      48: "icons/icon-48.png",
+    },
   },
   options_page: "options.html",
   content_scripts: [

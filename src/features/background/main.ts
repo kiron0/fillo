@@ -81,7 +81,7 @@ async function scanActiveFormWithRetry(tabId: number): Promise<ScanResult> {
 }
 
 function hasSupportedFillableField(scan: ScanResult): boolean {
-  return scan.fields.some((field) => field.type !== "grid");
+  return scan.fields.length > 0;
 }
 
 function enqueueStorageMutation<T>(action: () => Promise<T>): Promise<T> {

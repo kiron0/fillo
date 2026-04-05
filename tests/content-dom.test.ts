@@ -346,7 +346,22 @@ const gridOnlyFormHtml = `
   <body>
     <div role="listitem" class="Qr7Oae">
       <div role="heading">Availability</div>
-      <div role="grid"></div>
+      <div role="grid">
+        <div role="row">
+          <div role="columnheader">Morning</div>
+          <div role="columnheader">Afternoon</div>
+        </div>
+        <div role="row">
+          <div role="rowheader">Monday</div>
+          <div role="radio" aria-checked="false">Morning</div>
+          <div role="radio" aria-checked="false">Afternoon</div>
+        </div>
+        <div role="row">
+          <div role="rowheader">Tuesday</div>
+          <div role="radio" aria-checked="false">Morning</div>
+          <div role="radio" aria-checked="false">Afternoon</div>
+        </div>
+      </div>
     </div>
   </body>
 </html>
@@ -356,16 +371,88 @@ const unsupportedOnlyFormHtml = `
 <!doctype html>
 <html>
   <head>
-    <title>Unsupported Only</title>
+    <title>Grid Only</title>
   </head>
   <body>
     <div role="listitem" class="Qr7Oae">
       <div role="heading">Availability</div>
-      <div role="grid"></div>
+      <div role="grid">
+        <div role="row">
+          <div role="columnheader">Morning</div>
+          <div role="columnheader">Afternoon</div>
+        </div>
+        <div role="row">
+          <div role="rowheader">Monday</div>
+          <div role="radio" aria-checked="false">Morning</div>
+          <div role="radio" aria-checked="false">Afternoon</div>
+        </div>
+      </div>
     </div>
     <div role="listitem" class="Qr7Oae">
       <div role="heading">Preferences</div>
-      <div role="grid"></div>
+      <div role="grid">
+        <div role="row">
+          <div role="columnheader">A</div>
+          <div role="columnheader">B</div>
+        </div>
+        <div role="row">
+          <div role="rowheader">Row 1</div>
+          <div role="checkbox" aria-checked="false">A</div>
+          <div role="checkbox" aria-checked="false">B</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+`;
+
+const checkboxGridHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Checkbox Grid</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Preferences</div>
+      <div role="grid">
+        <div role="row">
+          <div role="columnheader">A</div>
+          <div role="columnheader">B</div>
+        </div>
+        <div role="row">
+          <div role="rowheader">Row 1</div>
+          <div role="checkbox" aria-checked="false">A</div>
+          <div role="checkbox" aria-checked="false">B</div>
+        </div>
+        <div role="row">
+          <div role="rowheader">Row 2</div>
+          <div role="checkbox" aria-checked="false">A</div>
+          <div role="checkbox" aria-checked="false">B</div>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
+`;
+
+const flattenedRadioGridHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Flattened Radio Grid</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Multiple choice grid</div>
+      <div class="row">
+        <div role="radio" aria-checked="false" aria-label="Column 1, response for Row 1"></div>
+        <div role="radio" aria-checked="false" aria-label="Column 2, response for Row 1"></div>
+      </div>
+      <div class="row">
+        <div role="radio" aria-checked="false" aria-label="Column 1, response for Row 2"></div>
+        <div role="radio" aria-checked="false" aria-label="Column 2, response for Row 2"></div>
+      </div>
     </div>
   </body>
 </html>
@@ -903,7 +990,7 @@ describe("content dom", () => {
     expect(inputs[1]!.value).toBe("work@example.com");
   });
 
-  it("surfaces grid questions as unsupported fields during scan", () => {
+  it("extracts rows, columns, and mode for grid questions during scan", () => {
     document.documentElement.innerHTML = gridOnlyFormHtml;
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSgridonly/viewform");
 
@@ -911,13 +998,109 @@ describe("content dom", () => {
     expect(scan.fields[0]).toMatchObject({
       label: "Availability",
       type: "grid",
+      options: ["Morning", "Afternoon"],
+      gridRows: ["Monday", "Tuesday"],
+      gridMode: "radio",
     });
   });
 
-  it("returns unsupported-only scans with detected grid fields instead of an empty result", () => {
+  it("keeps grid-only scans populated instead of returning an empty result", () => {
     document.documentElement.innerHTML = unsupportedOnlyFormHtml;
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSunsupported/viewform");
 
     expect(scan.fields.map((field) => field.type)).toEqual(["grid", "grid"]);
+  });
+
+  it("fills multiple choice grid answers by row", () => {
+    document.documentElement.innerHTML = gridOnlyFormHtml;
+    setInteractiveRoleClicks(document);
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSgridfill/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: {
+          kind: "grid",
+          rows: {
+            Monday: "Afternoon",
+            Tuesday: "Morning",
+          },
+        },
+      },
+    });
+
+    const gridRows = Array.from(document.querySelectorAll<HTMLElement>('[role="grid"] [role="row"]')).slice(1);
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="radio"]')[1]!.getAttribute("aria-checked")).toBe("true");
+    expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="radio"]')[0]!.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("fills checkbox grid answers by row", () => {
+    document.documentElement.innerHTML = checkboxGridHtml;
+    setInteractiveRoleClicks(document);
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSgridcheck/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: {
+          kind: "grid",
+          rows: {
+            "Row 1": ["A", "B"],
+            "Row 2": ["B"],
+          },
+        },
+      },
+    });
+
+    const gridRows = Array.from(document.querySelectorAll<HTMLElement>('[role="grid"] [role="row"]')).slice(1);
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[1]!.getAttribute("aria-checked")).toBe("true");
+    expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("false");
+    expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[1]!.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("detects flattened radio grids from accessibility labels", () => {
+    document.documentElement.innerHTML = flattenedRadioGridHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSflattened/viewform");
+
+    expect(scan.fields).toHaveLength(1);
+    expect(scan.fields[0]).toMatchObject({
+      type: "grid",
+      label: "Multiple choice grid",
+      options: ["Column 1", "Column 2"],
+      gridRows: ["Row 1", "Row 2"],
+      gridMode: "radio",
+    });
+  });
+
+  it("fills flattened radio grids by inferred row groups", () => {
+    document.documentElement.innerHTML = flattenedRadioGridHtml;
+    setInteractiveRoleClicks(document);
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSflattenedfill/viewform");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: {
+          kind: "grid",
+          rows: {
+            "Row 1": "Column 2",
+            "Row 2": "Column 1",
+          },
+        },
+      },
+    });
+
+    const radios = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]'));
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(radios[0]!.getAttribute("aria-checked")).toBe("false");
+    expect(radios[1]!.getAttribute("aria-checked")).toBe("true");
+    expect(radios[2]!.getAttribute("aria-checked")).toBe("true");
+    expect(radios[3]!.getAttribute("aria-checked")).toBe("false");
   });
 });

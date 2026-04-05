@@ -276,6 +276,55 @@ select {
   gap: 8px;
 }
 
+.grid-group-list {
+  display: grid;
+  gap: 12px;
+}
+
+.grid-group {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  width: 100%;
+  min-inline-size: 0;
+}
+
+.grid-group-label {
+  display: block;
+  margin: 0;
+  font-size: inherit;
+  font-weight: 600;
+  line-height: inherit;
+  color: var(--text);
+}
+
+.grid-option-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.grid-stacked-option {
+  min-height: 44px;
+  width: 100%;
+  max-width: 100%;
+  grid-template-columns: 16px 1fr;
+  align-items: start;
+}
+
+.grid-stacked-option-label {
+  font-size: inherit;
+  line-height: 1.35;
+  text-align: left;
+  min-width: 0;
+  width: 100%;
+  word-break: break-word;
+}
+
 .rating-scale {
   display: grid;
   grid-template-columns: repeat(var(--rating-columns, 5), minmax(0, 1fr));

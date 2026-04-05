@@ -15,7 +15,12 @@ export interface ChoiceWithOtherValue {
   otherText: string;
 }
 
-export type FieldValue = string | string[] | number | boolean | null | ChoiceWithOtherValue;
+export interface GridValue {
+  kind: "grid";
+  rows: Record<string, string | string[]>;
+}
+
+export type FieldValue = string | string[] | number | boolean | null | ChoiceWithOtherValue | GridValue;
 
 export type ProfileValue = string | string[] | boolean | number;
 
@@ -33,6 +38,9 @@ export interface DetectedField {
   required: boolean;
   options?: string[];
   otherOption?: string;
+  gridRows?: string[];
+  gridRowIds?: string[];
+  gridMode?: "radio" | "checkbox";
   scaleLowLabel?: string;
   scaleHighLabel?: string;
   sectionTitle?: string;

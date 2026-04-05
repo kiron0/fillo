@@ -11,6 +11,7 @@ import type {
   FieldValue,
   FillResult,
   FormPreset,
+  GridValue,
   MessageResponse,
   Profile,
 } from "../../core/types";
@@ -227,11 +228,19 @@ function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | unde
     return false;
   }
 
+  if (isGridValue(left) && isGridValue(right)) {
+    return compareGridRows(left.rows, right.rows);
+  }
+
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValue {
   return typeof value === "object" && value !== null && "kind" in value && value.kind === "choice_with_other";
+}
+
+function isGridValue(value: FieldValue | Profile["values"][string]): value is GridValue {
+  return typeof value === "object" && value !== null && "kind" in value && value.kind === "grid";
 }
 
 function clearDirtyField(fieldId: string): void {
@@ -259,6 +268,10 @@ function hasPersistableFieldValue(value: FieldValue | undefined): boolean {
     return String(value.selected).trim().length > 0;
   }
 
+  if (isGridValue(value)) {
+    return Object.values(value.rows).some((rowValue) => (Array.isArray(rowValue) ? rowValue.length > 0 : String(rowValue).trim().length > 0));
+  }
+
   return true;
 }
 
@@ -270,6 +283,65 @@ function compareOptionArrays(left: string[], right: string[]): boolean {
   const normalizedLeft = left.map((item) => normalizeText(item)).sort();
   const normalizedRight = right.map((item) => normalizeText(item)).sort();
   return normalizedLeft.every((value, index) => value === normalizedRight[index]);
+}
+
+function compareGridRows(left: Record<string, string | string[]>, right: Record<string, string | string[]>): boolean {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  if (!compareOptionArrays(leftKeys, rightKeys)) {
+    return false;
+  }
+
+  return leftKeys.every((key) => {
+    const leftValue = left[key];
+    const rightValue = right[key];
+
+    if (Array.isArray(leftValue) && Array.isArray(rightValue)) {
+      return compareOptionArrays(leftValue.map(String), rightValue.map(String));
+    }
+
+    return !Array.isArray(leftValue) && !Array.isArray(rightValue) && optionEquals(String(leftValue), String(rightValue));
+  });
+}
+
+function normalizeGridValue(field: DetectedField, value: FieldValue | Profile["values"][string]): GridValue | undefined {
+  if (!isGridValue(value) || !field.gridRows?.length || !field.options?.length || !field.gridMode) {
+    return undefined;
+  }
+
+  const normalizedRows: Record<string, string | string[]> = {};
+
+  for (const [rowIndex, rowLabel] of field.gridRows.entries()) {
+    const rowKey = field.gridRowIds?.[rowIndex] ?? rowLabel;
+    const rawRowValue = value.rows[rowKey] ?? value.rows[rowLabel];
+    if (rawRowValue === undefined || rawRowValue === null) {
+      continue;
+    }
+
+    if (field.gridMode === "radio") {
+      if (typeof rawRowValue !== "string") {
+        continue;
+      }
+
+      const matchedOption = findMatchingOption(field, rawRowValue);
+      if (matchedOption) {
+        normalizedRows[rowKey] = matchedOption;
+      }
+      continue;
+    }
+
+    if (Array.isArray(rawRowValue)) {
+      const matchedOptions = rawRowValue
+        .map(String)
+        .map((item) => findMatchingOption(field, item))
+        .filter((item): item is string => Boolean(item));
+      if (matchedOptions.length > 0) {
+        normalizedRows[rowKey] = Array.from(new Set(matchedOptions));
+      }
+    }
+  }
+
+  return { kind: "grid", rows: normalizedRows };
 }
 
 function clonePreset(preset: FormPreset | null): FormPreset | null {
@@ -366,6 +438,7 @@ function isPopupEditableField(field: DetectedField): boolean {
     case "scale":
     case "date":
     case "time":
+    case "grid":
       return true;
     default:
       return false;
@@ -496,6 +569,8 @@ function coerceFieldValueForField(field: DetectedField, value: FieldValue | Prof
       }
 
       return undefined;
+    case "grid":
+      return normalizeGridValue(field, value);
     case "date":
       return typeof value === "string" && isValidDateValue(value) ? value : undefined;
     case "time":
@@ -1038,6 +1113,98 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
 
       return wrapper;
     }
+    case "grid": {
+      const wrapper = document.createElement("div");
+      wrapper.className = "grid-group-list";
+
+      const columns = field.options ?? [];
+      const rows = field.gridRows ?? [];
+      const mode = field.gridMode ?? "radio";
+      const currentRows = isGridValue(value) ? value.rows : {};
+
+      for (const [rowIndex, rowLabel] of rows.entries()) {
+        const rowKey = field.gridRowIds?.[rowIndex] ?? rowLabel;
+        const selectedValue = currentRows[rowKey] ?? currentRows[rowLabel];
+        const selectedValues = Array.isArray(selectedValue) ? selectedValue.map(String) : [];
+
+        const group = document.createElement("section");
+        group.className = "grid-group";
+        group.dataset.gridRow = rowKey;
+        group.setAttribute("role", "group");
+
+        const groupLabel = document.createElement("p");
+        groupLabel.className = "grid-group-label";
+        groupLabel.textContent = rowLabel;
+        const groupLabelId = `popup-grid-${field.id}-row-label-${rowIndex}`;
+        groupLabel.id = groupLabelId;
+        group.setAttribute("aria-labelledby", groupLabelId);
+        group.append(groupLabel);
+
+        const optionsList = document.createElement("div");
+        optionsList.className = "grid-option-list";
+
+        for (const column of columns) {
+          const optionLabel = document.createElement("label");
+          optionLabel.className = "checkbox-item grid-stacked-option";
+
+          const input = document.createElement("input");
+          input.type = mode === "checkbox" ? "checkbox" : "radio";
+          if (mode === "radio") {
+            input.name = `popup-grid-${field.id}-row-${rowIndex}`;
+          }
+          input.value = column;
+          input.checked = mode === "checkbox"
+            ? selectedValues.some((value) => optionEquals(value, column))
+            : optionEquals(String(selectedValue ?? ""), column);
+          input.addEventListener("change", () => {
+            const current: GridValue = isGridValue(state.values[field.id])
+              ? structuredClone(state.values[field.id] as GridValue)
+              : { kind: "grid", rows: {} };
+            const nextRows = current.rows;
+
+            if (mode === "checkbox") {
+              const existingRowValue = nextRows[rowKey] ?? nextRows[rowLabel];
+              const nextSelected = Array.isArray(existingRowValue) ? [...existingRowValue] : [];
+              const existingIndex = nextSelected.findIndex((value) => optionEquals(value, column));
+              if (input.checked && existingIndex === -1) {
+                nextSelected.push(column);
+              }
+              if (!input.checked && existingIndex !== -1) {
+                nextSelected.splice(existingIndex, 1);
+              }
+              if (nextSelected.length > 0) {
+                nextRows[rowKey] = nextSelected;
+                if (rowKey !== rowLabel) {
+                  delete nextRows[rowLabel];
+                }
+              } else {
+                delete nextRows[rowKey];
+                delete nextRows[rowLabel];
+              }
+            } else if (input.checked) {
+              nextRows[rowKey] = column;
+              if (rowKey !== rowLabel) {
+                delete nextRows[rowLabel];
+              }
+            }
+
+            updateFieldValue(field.id, { kind: "grid", rows: nextRows });
+          });
+
+          const text = document.createElement("span");
+          text.className = "grid-stacked-option-label";
+          text.textContent = column;
+
+          optionLabel.append(input, text);
+          optionsList.append(optionLabel);
+        }
+
+        group.append(optionsList);
+        wrapper.append(group);
+      }
+
+      return wrapper;
+    }
     default: {
       const input = document.createElement("input");
       input.type = "text";
@@ -1091,6 +1258,12 @@ function renderFields(): void {
       const compatibleProfileKeys = Object.keys(profile.values).filter((key) =>
         coerceFieldValueForField(field, profile.values[key]) !== undefined,
       );
+      if (compatibleProfileKeys.length === 0 && !state.mappings[field.id]) {
+        card.append(header, body);
+        fieldsContainer.append(card);
+        continue;
+      }
+
       const mappingRow = document.createElement("label");
       mappingRow.className = "mapping-row";
 

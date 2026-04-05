@@ -1,6 +1,6 @@
 import { createFormKey } from "../../core/form-key";
 import { normalizeText, optionEquals } from "../../core/normalization";
-import type { ChoiceWithOtherValue, DetectedField, FieldType, FieldValue, FillRequest, FillResult, ScanResult } from "../../core/types";
+import type { ChoiceWithOtherValue, DetectedField, FieldType, FieldValue, FillRequest, FillResult, GridValue, ScanResult } from "../../core/types";
 
 type FieldDescriptor = {
   field: DetectedField;
@@ -412,6 +412,114 @@ function buildChoiceOptions(nodes: HTMLElement[], container: HTMLElement, role: 
   return { options, otherOption };
 }
 
+function isGridValue(value: FieldValue): value is GridValue {
+  return typeof value === "object" && value !== null && "kind" in value && value.kind === "grid";
+}
+
+function getDirectGrid(root: HTMLElement): HTMLElement | null {
+  const grid = root.querySelector<HTMLElement>('[role="grid"], .freebirdFormviewerComponentsQuestionGridRoot');
+  return grid && isVisible(grid) ? grid : null;
+}
+
+function extractGridRowLabel(row: HTMLElement): string {
+  const explicit = row.querySelector<HTMLElement>('[role="rowheader"]');
+  const explicitText = rawTextContent(explicit);
+  if (explicitText) {
+    return explicitText;
+  }
+
+  const clone = row.cloneNode(true) as HTMLElement;
+  clone.querySelectorAll('[role="radio"], [role="checkbox"]').forEach((node) => node.remove());
+  return rawTextContent(clone);
+}
+
+function parseFlattenedGridChoiceLabel(label: string): { column: string; row: string } | null {
+  const match = /^(.*?),\s*response for\s+(.+)$/i.exec(label.trim());
+  if (!match) {
+    return null;
+  }
+
+  const column = match[1]?.trim();
+  const row = match[2]?.trim();
+  return column && row ? { column, row } : null;
+}
+
+function extractFlattenedGridDefinition(
+  nodes: HTMLElement[],
+  mode: "radio" | "checkbox",
+): { rows: { id: string; label: string }[]; columns: string[]; mode: "radio" | "checkbox" } | null {
+  const parsedChoices = nodes.map((node) => parseFlattenedGridChoiceLabel(getChoiceLabel(node)));
+  if (parsedChoices.length === 0 || parsedChoices.some((choice) => !choice)) {
+    return null;
+  }
+
+  const rows: { id: string; label: string }[] = [];
+  const columns: string[] = [];
+
+  for (const choice of parsedChoices) {
+    if (!choice) {
+      continue;
+    }
+
+    if (!rows.some((row) => optionEquals(row.label, choice.row))) {
+      rows.push({ id: `row-${rows.length}`, label: choice.row });
+    }
+
+    if (!columns.some((column) => optionEquals(column, choice.column))) {
+      columns.push(choice.column);
+    }
+  }
+
+  return rows.length > 0 && columns.length > 0 ? { rows, columns, mode } : null;
+}
+
+function extractGridDefinition(
+  grid: HTMLElement,
+): { rows: { id: string; label: string }[]; columns: string[]; mode: "radio" | "checkbox" } | null {
+  const rowElements = Array.from(grid.querySelectorAll<HTMLElement>('[role="row"]')).filter(isVisible);
+  const columnHeaders = Array.from(grid.querySelectorAll<HTMLElement>('[role="columnheader"]'))
+    .map((header) => rawTextContent(header))
+    .filter(Boolean);
+
+  const dataRows = rowElements
+    .map((row, index) => {
+      const radios = Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]')).filter(isVisible);
+      const checkboxes = Array.from(row.querySelectorAll<HTMLElement>('[role="checkbox"]')).filter(isVisible);
+      const controls = radios.length > 0 ? radios : checkboxes;
+      if (controls.length === 0) {
+        return null;
+      }
+
+      const label = extractGridRowLabel(row);
+      const rowHeader = row.querySelector<HTMLElement>('[role="rowheader"]');
+      const id =
+        row.getAttribute("data-row-id") ??
+        row.id ??
+        rowHeader?.getAttribute("data-row-id") ??
+        rowHeader?.id ??
+        `row-${index}`;
+      return label ? { id, label, controls, mode: radios.length > 0 ? "radio" as const : "checkbox" as const } : null;
+    })
+    .filter((row): row is { id: string; label: string; controls: HTMLElement[]; mode: "radio" | "checkbox" } => Boolean(row));
+
+  if (dataRows.length === 0) {
+    return null;
+  }
+
+  const mode = dataRows.some((row) => row.mode === "checkbox") ? "checkbox" : "radio";
+  const rows = dataRows.map((row) => ({ id: row.id, label: row.label }));
+  const columns =
+    columnHeaders.length >= dataRows[0]!.controls.length
+      ? columnHeaders.slice(columnHeaders.length - dataRows[0]!.controls.length)
+      : dataRows[0]!.controls.map((control) => getChoiceLabel(control)).filter(Boolean);
+
+  if (columns.length === 0) {
+    return null;
+  }
+
+  return { rows, columns, mode };
+}
+
 function extractScaleBoundLabels(
   container: HTMLElement,
   label: string,
@@ -483,8 +591,55 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
     return null;
   }
 
+  const grid = getDirectGrid(container);
+  if (grid) {
+    const definition = extractGridDefinition(grid);
+    if (definition) {
+      return {
+        field: {
+          id: uniqueFieldId(container, label, index),
+          label,
+          normalizedLabel: normalizeText(label),
+          type: "grid",
+          required: isRequired(container, label),
+          options: definition.columns,
+          gridRows: definition.rows.map((row) => row.label),
+          gridRowIds: definition.rows.map((row) => row.id),
+          gridMode: definition.mode,
+          helpText: getHelpText(container),
+          sectionTitle: getSectionTitle(container),
+        },
+        container,
+        control: grid,
+        type: "grid",
+      };
+    }
+  }
+
   const radioOptions = Array.from(container.querySelectorAll<HTMLElement>('[role="radio"]')).filter(isVisible);
   if (radioOptions.length) {
+    const flattenedGrid = extractFlattenedGridDefinition(radioOptions, "radio");
+    if (flattenedGrid) {
+      return {
+        field: {
+          id: uniqueFieldId(container, label, index),
+          label,
+          normalizedLabel: normalizeText(label),
+          type: "grid",
+          required: isRequired(container, label),
+          options: flattenedGrid.columns,
+          gridRows: flattenedGrid.rows.map((row) => row.label),
+          gridRowIds: flattenedGrid.rows.map((row) => row.id),
+          gridMode: flattenedGrid.mode,
+          helpText: getHelpText(container),
+          sectionTitle: getSectionTitle(container),
+        },
+        container,
+        control: radioOptions[0],
+        type: "grid",
+      };
+    }
+
     const { options, otherOption } = buildChoiceOptions(radioOptions, container, "radio");
     const helpText = getHelpText(container);
     const numericScale = !otherOption && radioOptions.every((option) => {
@@ -514,6 +669,28 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
 
   const checkboxOptions = Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]')).filter(isVisible);
   if (checkboxOptions.length) {
+    const flattenedGrid = extractFlattenedGridDefinition(checkboxOptions, "checkbox");
+    if (flattenedGrid) {
+      return {
+        field: {
+          id: uniqueFieldId(container, label, index),
+          label,
+          normalizedLabel: normalizeText(label),
+          type: "grid",
+          required: isRequired(container, label),
+          options: flattenedGrid.columns,
+          gridRows: flattenedGrid.rows.map((row) => row.label),
+          gridRowIds: flattenedGrid.rows.map((row) => row.id),
+          gridMode: flattenedGrid.mode,
+          helpText: getHelpText(container),
+          sectionTitle: getSectionTitle(container),
+        },
+        container,
+        control: checkboxOptions[0],
+        type: "grid",
+      };
+    }
+
     const { options, otherOption } = isVerifiedEmailConsentContainer(container)
       ? { options: [getVerifiedEmailOptionLabel(container)], otherOption: undefined }
       : buildChoiceOptions(checkboxOptions, container, "checkbox");
@@ -532,24 +709,6 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
       container,
       control: checkboxOptions[0],
       type: "checkbox",
-    };
-  }
-
-  const grid = container.querySelector<HTMLElement>('[role="grid"], .freebirdFormviewerComponentsQuestionGridRoot');
-  if (grid && isVisible(grid)) {
-    return {
-      field: {
-        id: uniqueFieldId(container, label, index),
-        label,
-        normalizedLabel: normalizeText(label),
-        type: "grid",
-        required: isRequired(container, label),
-        helpText: getHelpText(container),
-        sectionTitle: getSectionTitle(container),
-      },
-      container,
-      control: grid,
-      type: "grid",
     };
   }
 
@@ -885,6 +1044,110 @@ function fillCheckboxGroup(container: HTMLElement, targetValues: string[]): bool
   return availableLabels.size > 0 || targetValues.length === 0;
 }
 
+function fillGridField(container: HTMLElement, field: DetectedField, value: FieldValue): boolean {
+  if (!isGridValue(value) || !field.gridRows?.length || !field.options?.length || !field.gridMode) {
+    return false;
+  }
+
+  const grid = getDirectGrid(container);
+  const dataRows = grid
+    ? Array.from(grid.querySelectorAll<HTMLElement>('[role="row"]'))
+        .filter(isVisible)
+        .map((row) => {
+          const radios = Array.from(row.querySelectorAll<HTMLElement>('[role="radio"]')).filter(isVisible);
+          const checkboxes = Array.from(row.querySelectorAll<HTMLElement>('[role="checkbox"]')).filter(isVisible);
+          const controls = field.gridMode === "checkbox" ? checkboxes : radios;
+          const label = extractGridRowLabel(row);
+          return controls.length > 0 && label ? { label, controls } : null;
+        })
+        .filter((row): row is { label: string; controls: HTMLElement[] } => Boolean(row))
+    : field.gridMode === "checkbox"
+      ? Array.from(container.querySelectorAll<HTMLElement>('[role="checkbox"]'))
+          .filter(isVisible)
+          .reduce<{ label: string; controls: HTMLElement[] }[]>((groups, control) => {
+            const parsed = parseFlattenedGridChoiceLabel(getChoiceLabel(control));
+            if (!parsed) {
+              return groups;
+            }
+
+            let group = groups.find((candidate) => optionEquals(candidate.label, parsed.row));
+            if (!group) {
+              group = { label: parsed.row, controls: [] };
+              groups.push(group);
+            }
+            group.controls.push(control);
+            return groups;
+          }, [])
+      : Array.from(container.querySelectorAll<HTMLElement>('[role="radio"]'))
+          .filter(isVisible)
+          .reduce<{ label: string; controls: HTMLElement[] }[]>((groups, control) => {
+            const parsed = parseFlattenedGridChoiceLabel(getChoiceLabel(control));
+            if (!parsed) {
+              return groups;
+            }
+
+            let group = groups.find((candidate) => optionEquals(candidate.label, parsed.row));
+            if (!group) {
+              group = { label: parsed.row, controls: [] };
+              groups.push(group);
+            }
+            group.controls.push(control);
+            return groups;
+          }, []);
+
+  if (dataRows.length === 0) {
+    return false;
+  }
+
+  let changedAny = false;
+
+  for (const [rowIndex, rowLabel] of field.gridRows.entries()) {
+    const row = dataRows[rowIndex];
+    if (!row) {
+      return false;
+    }
+
+    const rowKey = field.gridRowIds?.[rowIndex] ?? rowLabel;
+    const rowValue = value.rows[rowKey] ?? value.rows[rowLabel];
+    const columnLabels: string[] = field.options ?? [];
+
+    if (field.gridMode === "radio") {
+      if (typeof rowValue !== "string") {
+        continue;
+      }
+
+      const targetIndex = columnLabels.findIndex((column) => optionEquals(column, rowValue));
+      if (targetIndex < 0 || !row.controls[targetIndex]) {
+        return false;
+      }
+
+      const target = row.controls[targetIndex]!;
+      if (!isSelected(target)) {
+        toggleRoleOption(target);
+      }
+      changedAny = true;
+      continue;
+    }
+
+    const desired = new Set(Array.isArray(rowValue) ? rowValue.map((item) => normalizeText(String(item))) : []);
+
+    for (const [index, control] of row.controls.entries()) {
+      const columnLabel = columnLabels[index];
+      if (!columnLabel) {
+        continue;
+      }
+
+      const shouldBeChecked = desired.has(normalizeText(columnLabel));
+      if (isSelected(control) !== shouldBeChecked) {
+        toggleRoleOption(control);
+      }
+    }
+    changedAny = true;
+  }
+
+  return changedAny;
+}
+
 function fillChoiceAttachedText(
   choiceNode: HTMLElement | null,
   role: "radio" | "checkbox",
@@ -1072,6 +1335,9 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
         break;
       case "dropdown":
         success = typeof value === "string" || typeof value === "number" ? fillDropdown(descriptor.container, descriptor.control, String(value)) : false;
+        break;
+      case "grid":
+        success = fillGridField(descriptor.container, referenceField, value);
         break;
       default:
         success = false;

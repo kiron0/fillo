@@ -2250,9 +2250,7 @@ describe("popup", () => {
 
     await loadPopupModule();
 
-    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
-    expect(Array.from(mappingSelect.options).some((option) => option.value === "topics")).toBe(false);
-    expect(mappingSelect.value).toBe("");
+    expect(document.querySelector(".mapping-row")).toBeNull();
     expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
   });
 
@@ -2464,7 +2462,7 @@ describe("popup", () => {
     expect(mappingSelect.value).toBe("");
   });
 
-  it("shows unsupported fields as disabled and hides mapping controls", async () => {
+  it("renders multiple choice grids as separate row groups and hides mapping controls", async () => {
     const profiles: Profile[] = [
       {
         id: "profile-1",
@@ -2486,6 +2484,9 @@ describe("popup", () => {
           normalizedLabel: "availability",
           type: "grid",
           required: false,
+          options: ["Morning", "Afternoon"],
+          gridRows: ["Monday", "Tuesday"],
+          gridMode: "radio",
         },
       ],
     };
@@ -2507,10 +2508,119 @@ describe("popup", () => {
 
     await loadPopupModule();
 
-    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
-    expect(input.disabled).toBe(true);
-    expect(input.placeholder).toBe("This field type is not supported yet");
+    expect(document.querySelector(".grid-group-list")).toBeTruthy();
+    expect(Array.from(document.querySelectorAll<HTMLElement>(".grid-group-label")).map((node) => node.textContent)).toEqual([
+      "Monday",
+      "Tuesday",
+    ]);
+    expect(document.querySelectorAll('.grid-stacked-option input[type="radio"]')).toHaveLength(4);
+    expect(Array.from(document.querySelectorAll<HTMLElement>(".grid-stacked-option-label")).map((node) => node.textContent)).toEqual([
+      "Morning",
+      "Afternoon",
+      "Morning",
+      "Afternoon",
+    ]);
     expect(document.querySelector(".mapping-row")).toBeNull();
+  });
+
+  it("allows selecting the same column in different multiple choice grid rows", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Matrix Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "matrix-form",
+      fields: [
+        {
+          id: "availability_grid",
+          label: "Availability",
+          normalizedLabel: "availability",
+          type: "grid",
+          required: false,
+          options: ["Morning", "Afternoon"],
+          gridRows: ["Monday", "Tuesday"],
+          gridMode: "radio",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const radios = Array.from(document.querySelectorAll<HTMLInputElement>('.grid-stacked-option input[type="radio"]'));
+    radios[0]!.checked = true;
+    radios[0]!.dispatchEvent(new Event("change", { bubbles: true }));
+    radios[2]!.checked = true;
+    radios[2]!.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(radios[0]!.checked).toBe(true);
+    expect(radios[2]!.checked).toBe(true);
+  });
+
+  it("keeps grid selections independent even when row labels repeat", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Matrix Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "matrix-form",
+      fields: [
+        {
+          id: "availability_grid",
+          label: "Availability",
+          normalizedLabel: "availability",
+          type: "grid",
+          required: false,
+          options: ["Column 1", "Column 2"],
+          gridRows: ["Row", "Row"],
+          gridRowIds: ["row-0", "row-1"],
+          gridMode: "radio",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const radios = Array.from(document.querySelectorAll<HTMLInputElement>('.grid-stacked-option input[type="radio"]'));
+    radios[0]!.checked = true;
+    radios[0]!.dispatchEvent(new Event("change", { bubbles: true }));
+    radios[3]!.checked = true;
+    radios[3]!.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect((mock.state.presets as FormPreset[])[0]!.values.availability_grid).toEqual({
+      kind: "grid",
+      rows: {
+        "row-0": "Column 1",
+        "row-1": "Column 2",
+      },
+    });
   });
 
   it("shows a placeholder for textarea fields", async () => {
@@ -3254,7 +3364,7 @@ describe("popup", () => {
     expect(document.querySelector(".other-text-input")).toBeNull();
   });
 
-  it("shows unsupported grid-only forms instead of treating them as unreadable", async () => {
+  it("shows grid-only forms as editable matrices instead of unsupported", async () => {
     const activeForm: ActiveFormContext = {
       title: "Availability Form",
       url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
@@ -3266,6 +3376,9 @@ describe("popup", () => {
           normalizedLabel: "availability",
           type: "grid",
           required: false,
+          options: ["Morning", "Afternoon"],
+          gridRows: ["Monday"],
+          gridMode: "radio",
         },
       ],
     };
@@ -3290,7 +3403,7 @@ describe("popup", () => {
         callback({
           ok: true,
           data: {
-            status: "unsupported_only",
+            status: "ready",
             context: activeForm,
           },
         });
@@ -3317,11 +3430,110 @@ describe("popup", () => {
     await loadPopupModule();
 
     expect(document.querySelector<HTMLHeadingElement>("#form-title")!.textContent).toBe("Availability Form");
-    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.disabled).toBe(true);
+    expect(document.querySelector(".grid-group-list")).toBeTruthy();
+    expect(document.querySelectorAll('.grid-stacked-option input[type="radio"]')).toHaveLength(2);
     expect(document.querySelector<HTMLDivElement>("#error-card")!.classList.contains("hidden")).toBe(true);
-    expect(document.querySelector<HTMLDivElement>("#status-card")!.textContent).toBe(
-      "This form was scanned, but only unsupported field types were detected.",
-    );
+    expect(document.querySelector<HTMLDivElement>("#status-card")!.classList.contains("hidden")).toBe(true);
+  });
+
+  it("renders checkbox grids as separate row groups", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Preferences Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "checkbox-grid-form",
+      fields: [
+        {
+          id: "preferences",
+          label: "Preferences",
+          normalizedLabel: "preferences",
+          type: "grid",
+          required: false,
+          options: ["A", "B"],
+          gridRows: ["Row 1", "Row 2"],
+          gridMode: "checkbox",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector(".grid-group-list")).toBeTruthy();
+    expect(Array.from(document.querySelectorAll<HTMLElement>(".grid-group-label")).map((node) => node.textContent)).toEqual([
+      "Row 1",
+      "Row 2",
+    ]);
+    expect(document.querySelectorAll('.grid-stacked-option input[type="checkbox"]')).toHaveLength(4);
+    expect(Array.from(document.querySelectorAll<HTMLElement>(".grid-stacked-option-label")).map((node) => node.textContent)).toEqual([
+      "A",
+      "B",
+      "A",
+      "B",
+    ]);
+  });
+
+  it("renders radio grids as separate row radio groups", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Matrix Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "radio-grid-form",
+      fields: [
+        {
+          id: "availability",
+          label: "Availability",
+          normalizedLabel: "availability",
+          type: "grid",
+          required: false,
+          options: ["Column 1", "Column 2"],
+          gridRows: ["Row 1", "Row 2"],
+          gridMode: "radio",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const groups = Array.from(document.querySelectorAll<HTMLElement>(".grid-group"));
+    expect(groups).toHaveLength(2);
+    expect(groups.map((group) => group.querySelector(".grid-group-label")?.textContent)).toEqual(["Row 1", "Row 2"]);
+    expect(groups.map((group) => group.querySelectorAll('input[type="radio"]').length)).toEqual([2, 2]);
+    expect(groups.map((group) => Array.from(group.querySelectorAll<HTMLInputElement>('input[type="radio"]')).map((input) => input.name))).toEqual([
+      ["popup-grid-availability-row-0", "popup-grid-availability-row-0"],
+      ["popup-grid-availability-row-1", "popup-grid-availability-row-1"],
+    ]);
+    expect(groups.map((group) => Array.from(group.querySelectorAll<HTMLElement>(".grid-stacked-option-label")).map((node) => node.textContent))).toEqual([
+      ["Column 1", "Column 2"],
+      ["Column 1", "Column 2"],
+    ]);
   });
 
   it("refuses to fill when the active tab changed to a different form", async () => {

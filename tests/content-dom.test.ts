@@ -1,4 +1,4 @@
-import { fillFormDocument, scanFormDocument } from "../src/features/content/form-dom";
+import { fillFormDocument, fillFormDocumentAsync, scanFormDocument } from "../src/features/content/form-dom";
 
 const formHtml = `
 <!doctype html>
@@ -146,6 +146,138 @@ const scopedListboxHtml = `
     </div>
     <div id="unrelated-options">
       <div role="option">Wrong Option</div>
+    </div>
+  </body>
+</html>
+`;
+
+const scopedComboboxHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Scoped Combobox</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Department</div>
+      <div role="combobox" aria-controls="department-options" aria-expanded="false"></div>
+    </div>
+    <div id="department-options">
+      <div role="option">CSE</div>
+      <div role="option">EEE</div>
+    </div>
+  </body>
+</html>
+`;
+
+const mousedownComboboxHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Mousedown Combobox</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Department</div>
+      <div role="combobox" aria-controls="department-options" aria-expanded="false"></div>
+    </div>
+    <div id="department-options">
+      <div role="option">CSE</div>
+      <div role="option">EEE</div>
+    </div>
+  </body>
+</html>
+`;
+
+const keyboardComboboxHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Keyboard Combobox</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Department</div>
+      <div role="combobox" aria-controls="department-options" aria-expanded="false"></div>
+    </div>
+    <div id="department-options">
+      <div id="department-option-cse" role="option">CSE</div>
+      <div id="department-option-eee" role="option">EEE</div>
+    </div>
+  </body>
+</html>
+`;
+
+const comboboxWithTextInputHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Combobox With Text Input</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Department</div>
+      <div role="combobox" aria-controls="department-options" aria-expanded="false">
+        <input type="text" name="department_search" />
+      </div>
+    </div>
+    <div id="department-options">
+      <div role="option">CSE</div>
+      <div role="option">EEE</div>
+    </div>
+  </body>
+</html>
+`;
+
+const keyboardListboxHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Keyboard Listbox</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Session</div>
+      <div role="listbox" aria-controls="session-options"></div>
+    </div>
+    <div id="session-options">
+      <div id="session-option-morning" role="option">Morning</div>
+      <div id="session-option-evening" role="option">Evening</div>
+    </div>
+  </body>
+</html>
+`;
+
+const selectedStateListboxHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Selected State Listbox</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">All the options</div>
+      <div role="listbox" aria-expanded="false">
+        <div role="option" aria-selected="true" data-value="">Choose</div>
+        <div role="option" aria-selected="false" data-value="Option 1">Option 1</div>
+        <div role="option" aria-selected="false" data-value="Option 2">Option 2</div>
+        <div role="option" aria-selected="false" data-value="Option 3">Option 3</div>
+      </div>
+    </div>
+  </body>
+</html>
+`;
+
+const delayedListboxHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Delayed Listbox</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">All the options</div>
+      <div role="listbox" aria-expanded="false"></div>
     </div>
   </body>
 </html>
@@ -518,6 +650,25 @@ describe("content dom", () => {
     expect((document.querySelector('select[name="session"]') as HTMLSelectElement).value).toBe("evening");
   });
 
+  it("clears a native select field when the payload explicitly sets the dropdown to no option", () => {
+    document.documentElement.innerHTML = formHtml;
+    const select = document.querySelector('select[name="session"]') as HTMLSelectElement;
+    select.value = "evening";
+
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLS123/viewform");
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        session: null,
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["session"]);
+    expect(fillResult.skippedFieldIds).toEqual([]);
+    expect(select.value).toBe("");
+  });
+
   it("extracts radio option labels from nested text and aria metadata", () => {
     document.documentElement.innerHTML = nestedChoiceHtml;
     const result = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLS456/viewform");
@@ -776,6 +927,382 @@ describe("content dom", () => {
 
     expect(fillResult.filledFieldIds).toEqual(["session_0"]);
     expect(listbox.getAttribute("data-selected")).toBe("Evening");
+  });
+
+  it("fills combobox options from the scoped popup", () => {
+    document.documentElement.innerHTML = scopedComboboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScombobox/viewform");
+
+    expect(scan.fields[0]).toMatchObject({
+      type: "dropdown",
+      options: ["CSE", "EEE"],
+    });
+
+    const combobox = document.querySelector('[role="combobox"]') as HTMLElement;
+    combobox.addEventListener("click", () => {
+      combobox.setAttribute("aria-expanded", "true");
+    });
+
+    for (const option of document.querySelectorAll<HTMLElement>('#department-options [role="option"]')) {
+      option.addEventListener("click", () => {
+        combobox.setAttribute("data-selected", option.textContent ?? "");
+      });
+    }
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        department_0: "EEE",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["department_0"]);
+    expect(
+      combobox.getAttribute("data-selected") === "EEE" || combobox.getAttribute("aria-activedescendant") === "department-option-eee",
+    ).toBe(true);
+  });
+
+  it("fills combobox options when selection commits on mousedown instead of click", () => {
+    document.documentElement.innerHTML = mousedownComboboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSmousedown/viewform");
+
+    const combobox = document.querySelector('[role="combobox"]') as HTMLElement;
+    combobox.addEventListener("mousedown", () => {
+      combobox.setAttribute("aria-expanded", "true");
+    });
+
+    for (const option of document.querySelectorAll<HTMLElement>('#department-options [role="option"]')) {
+      option.addEventListener("mousedown", () => {
+        combobox.setAttribute("data-selected", option.textContent ?? "");
+      });
+    }
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        department_0: "EEE",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["department_0"]);
+    expect(combobox.getAttribute("data-selected")).toBe("EEE");
+  });
+
+  it("fills combobox options when selection commits through aria-activedescendant and Enter", async () => {
+    document.documentElement.innerHTML = keyboardComboboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSkeyboard/viewform");
+
+    const combobox = document.querySelector('[role="combobox"]') as HTMLElement;
+    const options = Array.from(document.querySelectorAll<HTMLElement>('#department-options [role="option"]'));
+    let activeIndex = -1;
+
+    combobox.addEventListener("click", () => {
+      combobox.setAttribute("aria-expanded", "true");
+    });
+
+    combobox.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        activeIndex = Math.min(activeIndex + 1, options.length - 1);
+        combobox.setAttribute("aria-activedescendant", options[activeIndex]!.id);
+      }
+
+      if (event.key === "Enter" && activeIndex >= 0) {
+        combobox.setAttribute("data-selected", options[activeIndex]!.textContent ?? "");
+      }
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        department_0: "EEE",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["department_0"]);
+    expect(
+      combobox.getAttribute("data-selected") === "EEE" || combobox.getAttribute("aria-activedescendant") === "department-option-eee",
+    ).toBe(true);
+  });
+
+  it("detects a combobox dropdown before a nested text input fallback", () => {
+    document.documentElement.innerHTML = comboboxWithTextInputHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScomboboxtext/viewform");
+
+    expect(scan.fields[0]).toMatchObject({
+      type: "dropdown",
+      options: ["CSE", "EEE"],
+    });
+  });
+
+  it("fills listbox options when selection commits through aria-activedescendant and Enter", async () => {
+    document.documentElement.innerHTML = keyboardListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSkeyboardlistbox/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    const options = Array.from(document.querySelectorAll<HTMLElement>('#session-options [role="option"]'));
+    let activeIndex = -1;
+
+    listbox.addEventListener("click", () => {
+      listbox.setAttribute("aria-expanded", "true");
+    });
+
+    listbox.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown") {
+        activeIndex = Math.min(activeIndex + 1, options.length - 1);
+        listbox.setAttribute("aria-activedescendant", options[activeIndex]!.id);
+      }
+
+      if (event.key === "Enter" && activeIndex >= 0) {
+        listbox.setAttribute("data-selected", options[activeIndex]!.textContent ?? "");
+      }
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        session_0: "Evening",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["session_0"]);
+  });
+
+  it("fills Google-style listboxes that track selection with aria-selected on child options", async () => {
+    document.documentElement.innerHTML = selectedStateListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSselectedstate/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    const getOptions = () => Array.from(listbox.querySelectorAll<HTMLElement>('[role="option"]'));
+
+    listbox.addEventListener("click", () => {
+      listbox.setAttribute("aria-expanded", "true");
+    });
+
+    listbox.addEventListener("keydown", (event) => {
+      const options = getOptions();
+      let currentIndex = options.findIndex((option) => option.getAttribute("aria-selected") === "true");
+      if (currentIndex < 0) {
+        currentIndex = 0;
+      }
+
+      if (event.key === "ArrowDown") {
+        const nextIndex = Math.min(currentIndex + 1, options.length - 1);
+        options.forEach((option, index) => option.setAttribute("aria-selected", index === nextIndex ? "true" : "false"));
+      }
+
+      if (event.key === "ArrowUp") {
+        const nextIndex = Math.max(currentIndex - 1, 0);
+        options.forEach((option, index) => option.setAttribute("aria-selected", index === nextIndex ? "true" : "false"));
+      }
+
+      if ((event.key === "Enter" || event.key === " ") && currentIndex >= 0) {
+        listbox.setAttribute("data-selected", options[currentIndex]!.textContent ?? "");
+      }
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        all_the_options_0: "Option 2",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["all_the_options_0"]);
+  });
+
+  it("fills popup dropdowns when options appear after the listbox opens", async () => {
+    document.documentElement.innerHTML = delayedListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSdelayedlistbox/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    listbox.addEventListener("click", () => {
+      listbox.setAttribute("aria-expanded", "true");
+      window.setTimeout(() => {
+        if (listbox.querySelector('[role="option"]')) {
+          return;
+        }
+
+        const choose = document.createElement("div");
+        choose.setAttribute("role", "option");
+        choose.setAttribute("aria-selected", "true");
+        choose.textContent = "Choose";
+
+        const option1 = document.createElement("div");
+        option1.setAttribute("role", "option");
+        option1.setAttribute("aria-selected", "false");
+        option1.textContent = "Option 1";
+
+        const option2 = document.createElement("div");
+        option2.setAttribute("role", "option");
+        option2.setAttribute("aria-selected", "false");
+        option2.textContent = "Option 2";
+
+        for (const option of [choose, option1, option2]) {
+          option.addEventListener("click", () => {
+            listbox.setAttribute("data-selected", option.textContent ?? "");
+          });
+          listbox.append(option);
+        }
+      }, 10);
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        all_the_options_0: "Option 2",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["all_the_options_0"]);
+    expect(listbox.getAttribute("data-selected")).toBe("Option 2");
+  });
+
+  it("reports popup dropdowns as filled when the selection commit lands shortly after the option click", async () => {
+    document.documentElement.innerHTML = delayedListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSasynccommit/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    listbox.addEventListener("click", () => {
+      listbox.setAttribute("aria-expanded", "true");
+
+      if (listbox.querySelector('[role="option"]')) {
+        return;
+      }
+
+      const choose = document.createElement("div");
+      choose.setAttribute("role", "option");
+      choose.setAttribute("aria-selected", "true");
+      choose.textContent = "Choose";
+
+      const option2 = document.createElement("div");
+      option2.setAttribute("role", "option");
+      option2.setAttribute("aria-selected", "false");
+      option2.textContent = "Option 2";
+      option2.addEventListener("click", () => {
+        window.setTimeout(() => {
+          listbox.setAttribute("data-selected", "Option 2");
+        }, 10);
+      });
+
+      listbox.append(choose, option2);
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        all_the_options_0: "Option 2",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["all_the_options_0"]);
+    expect(fillResult.skippedFieldIds).toEqual([]);
+    expect(listbox.getAttribute("data-selected")).toBe("Option 2");
+  });
+
+  it("retries popup dropdown fill when the first open does not commit a selection and closes afterward", async () => {
+    document.documentElement.innerHTML = delayedListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSretrylistbox/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    let openCount = 0;
+
+    listbox.addEventListener("click", () => {
+      openCount += 1;
+      listbox.setAttribute("aria-expanded", "true");
+
+      if (openCount === 1) {
+        return;
+      }
+
+      if (listbox.querySelector('[role="option"]')) {
+        return;
+      }
+
+      const choose = document.createElement("div");
+      choose.setAttribute("role", "option");
+      choose.setAttribute("aria-selected", "true");
+      choose.textContent = "Choose";
+
+      const option2 = document.createElement("div");
+      option2.setAttribute("role", "option");
+      option2.setAttribute("aria-selected", "false");
+      option2.textContent = "Option 2";
+      option2.addEventListener("click", () => {
+        listbox.setAttribute("data-selected", "Option 2");
+      });
+
+      listbox.append(choose, option2);
+    });
+
+    listbox.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        listbox.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        all_the_options_0: "Option 2",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["all_the_options_0"]);
+    expect(listbox.getAttribute("data-selected")).toBe("Option 2");
+    expect(listbox.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("does not report popup listboxes as filled when no dropdown selection commits", async () => {
+    document.documentElement.innerHTML = delayedListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSfailedlistbox/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    listbox.addEventListener("click", () => {
+      listbox.setAttribute("aria-expanded", "true");
+
+      if (listbox.querySelector('[role="option"]')) {
+        return;
+      }
+
+      const choose = document.createElement("div");
+      choose.setAttribute("role", "option");
+      choose.setAttribute("aria-selected", "true");
+      choose.textContent = "Choose";
+
+      const option2 = document.createElement("div");
+      option2.setAttribute("role", "option");
+      option2.setAttribute("aria-selected", "false");
+      option2.textContent = "Option 2";
+
+      listbox.append(choose, option2);
+    });
+
+    listbox.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        listbox.setAttribute("aria-expanded", "false");
+      }
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        all_the_options_0: "Option 2",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual([]);
+    expect(fillResult.skippedFieldIds).toEqual(["all_the_options_0"]);
+    expect(listbox.getAttribute("data-selected")).toBeNull();
+    expect(listbox.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("does not treat a native select placeholder as a real dropdown answer", () => {

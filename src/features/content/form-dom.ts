@@ -15,6 +15,11 @@ type FieldIdentity = {
   helpText?: string;
 };
 
+const POPUP_OPTION_RETRY_ATTEMPTS = 8;
+const POPUP_OPTION_RETRY_DELAY_MS = 50;
+const POPUP_FILL_ATTEMPTS = 2;
+const POPUP_KEYBOARD_STEP_DELAY_MS = 30;
+
 function isVisible(element: Element): boolean {
   const node = element as HTMLElement;
   if (node.hidden) {
@@ -89,6 +94,10 @@ function getChoiceLabel(node: HTMLElement): string {
   }
 
   return "";
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function getQuestionContainers(root: Document): HTMLElement[] {
@@ -806,6 +815,29 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
     };
   }
 
+  const popupDropdown = container.querySelector<HTMLElement>('[role="listbox"], [role="combobox"]');
+  if (popupDropdown && isVisible(popupDropdown)) {
+    const options = getScopedPopupOptionNodes(popupDropdown, container)
+      .map((option) => rawTextContent(option))
+      .filter(Boolean);
+
+    return {
+      field: {
+        id: uniqueFieldId(container, label, index),
+        label,
+        normalizedLabel: normalizeText(label),
+        type: "dropdown",
+        required: isRequired(container, label),
+        options,
+        helpText: getHelpText(container),
+        sectionTitle: getSectionTitle(container),
+      },
+      container,
+      control: popupDropdown,
+      type: "dropdown",
+    };
+  }
+
   const textInput = container.querySelector<HTMLInputElement>('input[type="text"], input[type="email"], input[type="number"], input[type="tel"], input[type="url"]');
   if (textInput && isVisible(textInput)) {
     return {
@@ -839,29 +871,6 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
       container,
       control: textarea,
       type: "textarea",
-    };
-  }
-
-  const listbox = container.querySelector<HTMLElement>('[role="listbox"]');
-  if (listbox && isVisible(listbox)) {
-    const options = getListboxOptionNodes(listbox, container)
-      .map((option) => rawTextContent(option))
-      .filter(Boolean);
-
-    return {
-      field: {
-        id: uniqueFieldId(container, label, index),
-        label,
-        normalizedLabel: normalizeText(label),
-        type: "dropdown",
-        required: isRequired(container, label),
-        options,
-        helpText: getHelpText(container),
-        sectionTitle: getSectionTitle(container),
-      },
-      container,
-      control: listbox,
-      type: "dropdown",
     };
   }
 
@@ -985,8 +994,33 @@ function isSelected(node: HTMLElement): boolean {
   return node.getAttribute("aria-checked") === "true" || node.getAttribute("aria-selected") === "true";
 }
 
-function toggleRoleOption(node: HTMLElement): void {
+function dispatchPointerMouseClickSequence(node: HTMLElement): void {
+  const pointerEventCtor = typeof PointerEvent === "function" ? PointerEvent : null;
+  if (pointerEventCtor) {
+    node.dispatchEvent(new pointerEventCtor("pointerdown", { bubbles: true, cancelable: true, pointerId: 1, isPrimary: true, button: 0 }));
+  }
+
+  node.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+  node.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
   node.click();
+}
+
+function dispatchKeyboardSequence(node: HTMLElement, key: string): void {
+  node.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, key }));
+  node.dispatchEvent(new KeyboardEvent("keypress", { bubbles: true, cancelable: true, key }));
+  node.dispatchEvent(new KeyboardEvent("keyup", { bubbles: true, cancelable: true, key }));
+}
+
+function closePopupDropdown(control: HTMLElement): void {
+  dispatchKeyboardSequence(control, "Escape");
+  control.dispatchEvent(new Event("blur", { bubbles: true }));
+  document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
+  document.body.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
+  document.body.click();
+}
+
+function toggleRoleOption(node: HTMLElement): void {
+  dispatchPointerMouseClickSequence(node);
 }
 
 function selectRadioOption(container: HTMLElement, target: string): HTMLElement | null {
@@ -1163,6 +1197,10 @@ function fillChoiceAttachedText(
   return true;
 }
 
+function findPlaceholderPopupOption(candidates: HTMLElement[]): HTMLElement | undefined {
+  return candidates.find((candidate) => looksLikePlaceholderLabel(rawTextContent(candidate)));
+}
+
 function fillDropdown(container: HTMLElement, control: HTMLElement, value: string): boolean {
   if (control instanceof HTMLSelectElement) {
     const option = Array.from(control.options).find((candidate) =>
@@ -1177,25 +1215,277 @@ function fillDropdown(container: HTMLElement, control: HTMLElement, value: strin
     return true;
   }
 
-  if (control.getAttribute("role") === "listbox") {
-    control.click();
-    const candidates = getListboxOptionNodes(control, container);
+  if (control.getAttribute("role") === "listbox" || control.getAttribute("role") === "combobox") {
+    dispatchPointerMouseClickSequence(control);
+    const candidates = getPopupOptionNodes(control, container);
     const option = candidates.find((candidate) => optionEquals(rawTextContent(candidate), value));
-    if (!option) {
-      return false;
+    if (option) {
+      dispatchPointerMouseClickSequence(option);
+      if (didPopupSelectionCommit(control, option, value)) {
+        return true;
+      }
     }
 
-    option.click();
-    return true;
+    if (control.getAttribute("role") === "combobox" || control.getAttribute("role") === "listbox") {
+      return selectPopupOptionWithKeyboard(control, candidates, value);
+    }
+
+    return false;
   }
 
   return false;
 }
 
-function getListboxOptionNodes(control: HTMLElement, container: HTMLElement): HTMLElement[] {
+function clearDropdown(container: HTMLElement, control: HTMLElement): boolean {
+  if (control instanceof HTMLSelectElement) {
+    const placeholderOption =
+      Array.from(control.options).find((candidate) => candidate.value.trim().length === 0) ??
+      Array.from(control.options).find((candidate) => looksLikePlaceholderLabel(candidate.textContent?.trim() ?? ""));
+
+    if (!placeholderOption) {
+      return false;
+    }
+
+    control.value = placeholderOption.value;
+    dispatchInputEvents(control);
+    return true;
+  }
+
+  if (control.getAttribute("role") === "listbox" || control.getAttribute("role") === "combobox") {
+    dispatchPointerMouseClickSequence(control);
+    const candidates = getPopupOptionNodes(control, container);
+    const placeholderOption = findPlaceholderPopupOption(candidates);
+    if (placeholderOption) {
+      dispatchPointerMouseClickSequence(placeholderOption);
+      return didPopupSelectionCommit(control, placeholderOption, rawTextContent(placeholderOption));
+    }
+  }
+
+  return false;
+}
+
+async function fillDropdownAsync(container: HTMLElement, control: HTMLElement, value: string): Promise<boolean> {
+  if (control instanceof HTMLSelectElement) {
+    return fillDropdown(container, control, value);
+  }
+
+  if (control.getAttribute("role") === "listbox" || control.getAttribute("role") === "combobox") {
+    for (let fillAttempt = 0; fillAttempt < POPUP_FILL_ATTEMPTS; fillAttempt += 1) {
+      dispatchPointerMouseClickSequence(control);
+
+      let candidates = getPopupOptionNodes(control, container);
+      let option = candidates.find((candidate) => optionEquals(rawTextContent(candidate), value));
+
+      for (let attempt = 0; !option && attempt < POPUP_OPTION_RETRY_ATTEMPTS; attempt += 1) {
+        await sleep(POPUP_OPTION_RETRY_DELAY_MS);
+        candidates = getPopupOptionNodes(control, container);
+        option = candidates.find((candidate) => optionEquals(rawTextContent(candidate), value));
+      }
+
+      if (option) {
+        dispatchPointerMouseClickSequence(option);
+        if (didPopupSelectionCommit(control, option, value)) {
+          closePopupDropdown(control);
+          return true;
+        }
+
+        await sleep(POPUP_OPTION_RETRY_DELAY_MS);
+        if (didPopupSelectionCommit(control, option, value)) {
+          closePopupDropdown(control);
+          return true;
+        }
+      }
+
+      if (control.getAttribute("role") === "combobox" || control.getAttribute("role") === "listbox") {
+        const keyboardSuccess = await selectPopupOptionWithKeyboard(control, candidates, value);
+        if (keyboardSuccess) {
+          closePopupDropdown(control);
+          return true;
+        }
+      }
+
+      closePopupDropdown(control);
+      await sleep(POPUP_OPTION_RETRY_DELAY_MS);
+    }
+
+    return false;
+  }
+
+  return fillDropdown(container, control, value);
+}
+
+async function clearDropdownAsync(container: HTMLElement, control: HTMLElement): Promise<boolean> {
+  if (control instanceof HTMLSelectElement) {
+    return clearDropdown(container, control);
+  }
+
+  if (control.getAttribute("role") === "listbox" || control.getAttribute("role") === "combobox") {
+    for (let fillAttempt = 0; fillAttempt < POPUP_FILL_ATTEMPTS; fillAttempt += 1) {
+      dispatchPointerMouseClickSequence(control);
+
+      let candidates = getPopupOptionNodes(control, container);
+      let placeholderOption = findPlaceholderPopupOption(candidates);
+
+      for (let attempt = 0; !placeholderOption && attempt < POPUP_OPTION_RETRY_ATTEMPTS; attempt += 1) {
+        await sleep(POPUP_OPTION_RETRY_DELAY_MS);
+        candidates = getPopupOptionNodes(control, container);
+        placeholderOption = findPlaceholderPopupOption(candidates);
+      }
+
+      if (placeholderOption) {
+        const placeholderValue = rawTextContent(placeholderOption);
+        dispatchPointerMouseClickSequence(placeholderOption);
+        if (didPopupSelectionCommit(control, placeholderOption, placeholderValue)) {
+          closePopupDropdown(control);
+          return true;
+        }
+
+        await sleep(POPUP_OPTION_RETRY_DELAY_MS);
+        if (didPopupSelectionCommit(control, placeholderOption, placeholderValue)) {
+          closePopupDropdown(control);
+          return true;
+        }
+      }
+
+      closePopupDropdown(control);
+      await sleep(POPUP_OPTION_RETRY_DELAY_MS);
+    }
+
+    return false;
+  }
+
+  return clearDropdown(container, control);
+}
+
+function getScopedPopupOptionNodes(control: HTMLElement, container: HTMLElement): HTMLElement[] {
   const popupId = control.getAttribute("aria-controls") ?? control.getAttribute("aria-owns");
   const popupRoot = popupId ? document.getElementById(popupId) : null;
   return Array.from((popupRoot ?? container).querySelectorAll<HTMLElement>('[role="option"]')).filter(isVisible);
+}
+
+function getPopupOptionNodes(control: HTMLElement, container: HTMLElement): HTMLElement[] {
+  const scopedOptions = getScopedPopupOptionNodes(control, container);
+  if (scopedOptions.length > 0) {
+    return scopedOptions;
+  }
+
+  const popupId = control.getAttribute("aria-controls") ?? control.getAttribute("aria-owns");
+  const popupRoot = popupId ? document.getElementById(popupId) : null;
+  const roots = [popupRoot, container, document.body, document.documentElement].filter((root): root is HTMLElement => Boolean(root));
+  const options: HTMLElement[] = [];
+
+  for (const root of roots) {
+    for (const option of Array.from(root.querySelectorAll<HTMLElement>('[role="option"]')).filter(isVisible)) {
+      if (!options.includes(option)) {
+        options.push(option);
+      }
+    }
+  }
+
+  return options;
+}
+
+function didPopupSelectionCommit(control: HTMLElement, option: HTMLElement, value: string): boolean {
+  if (option.getAttribute("aria-selected") === "true" || option.getAttribute("aria-checked") === "true") {
+    return true;
+  }
+
+  const activeDescendantId = control.getAttribute("aria-activedescendant");
+  if (activeDescendantId && option.id && activeDescendantId === option.id) {
+    return true;
+  }
+
+  const controlValueCandidates = [
+    rawTextContent(control),
+    control.getAttribute("aria-label") ?? "",
+    control.getAttribute("aria-valuetext") ?? "",
+    control.getAttribute("data-selected") ?? "",
+    control.getAttribute("data-value") ?? "",
+  ];
+
+  return controlValueCandidates.some((candidate) => optionEquals(candidate, value));
+}
+
+async function selectPopupOptionWithKeyboard(control: HTMLElement, candidates: HTMLElement[], value: string): Promise<boolean> {
+  const targetIndex = candidates.findIndex((candidate) => optionEquals(rawTextContent(candidate), value));
+  if (targetIndex < 0) {
+    return false;
+  }
+
+  control.focus();
+
+  const getCurrentSelectionIndex = (): number =>
+    candidates.findIndex((candidate) => candidate.getAttribute("aria-selected") === "true");
+
+  let currentIndex = getCurrentSelectionIndex();
+
+  if (currentIndex >= 0 && currentIndex !== targetIndex) {
+    const directionKey = currentIndex < targetIndex ? "ArrowDown" : "ArrowUp";
+    const steps = Math.abs(targetIndex - currentIndex);
+
+    for (let step = 0; step < steps; step += 1) {
+      dispatchKeyboardSequence(control, directionKey);
+      await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+      currentIndex = getCurrentSelectionIndex();
+      if (currentIndex === targetIndex) {
+        break;
+      }
+    }
+  }
+
+  currentIndex = getCurrentSelectionIndex();
+  if (currentIndex === targetIndex) {
+    const targetOption = candidates[targetIndex];
+    if (targetOption) {
+      dispatchKeyboardSequence(control, "Enter");
+      await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+      if (didPopupSelectionCommit(control, targetOption, value)) {
+        return true;
+      }
+
+      dispatchKeyboardSequence(control, " ");
+      await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+      return didPopupSelectionCommit(control, targetOption, value);
+    }
+  }
+
+  for (let step = 0; step <= candidates.length; step += 1) {
+    const activeDescendantId = control.getAttribute("aria-activedescendant");
+    const activeOption = activeDescendantId ? document.getElementById(activeDescendantId) as HTMLElement | null : null;
+    if (activeOption && optionEquals(rawTextContent(activeOption), value)) {
+      dispatchKeyboardSequence(control, "Enter");
+      await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+      if (didPopupSelectionCommit(control, activeOption, value)) {
+        return true;
+      }
+
+      dispatchKeyboardSequence(control, " ");
+      await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+      return didPopupSelectionCommit(control, activeOption, value);
+    }
+
+    dispatchKeyboardSequence(control, "ArrowDown");
+    await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+  }
+
+  currentIndex = getCurrentSelectionIndex();
+  if (currentIndex < 0) {
+    for (let step = 0; step <= targetIndex; step += 1) {
+      dispatchKeyboardSequence(control, "ArrowDown");
+      await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+    }
+  }
+
+  dispatchKeyboardSequence(control, "Enter");
+  await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+  const targetOption = candidates[targetIndex];
+  if (targetOption && didPopupSelectionCommit(control, targetOption, value)) {
+    return true;
+  }
+
+  dispatchKeyboardSequence(control, " ");
+  await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+  return targetOption ? didPopupSelectionCommit(control, targetOption, value) : false;
 }
 
 function buildFieldIdentity(field: Pick<DetectedField, "normalizedLabel" | "sectionTitle" | "helpText">): FieldIdentity {
@@ -1334,7 +1624,117 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
         }
         break;
       case "dropdown":
-        success = typeof value === "string" || typeof value === "number" ? fillDropdown(descriptor.container, descriptor.control, String(value)) : false;
+        success =
+          value === null
+            ? clearDropdown(descriptor.container, descriptor.control)
+            : typeof value === "string" || typeof value === "number"
+              ? fillDropdown(descriptor.container, descriptor.control, String(value))
+              : false;
+        break;
+      case "grid":
+        success = fillGridField(descriptor.container, referenceField, value);
+        break;
+      default:
+        success = false;
+        break;
+    }
+
+    if (success) {
+      filledFieldIds.push(fieldId);
+    } else {
+      skippedFieldIds.push(fieldId);
+    }
+  }
+
+  return { filledFieldIds, skippedFieldIds };
+}
+
+export async function fillFormDocumentAsync(root: Document, request: FillRequest): Promise<FillResult> {
+  const filledFieldIds: string[] = [];
+  const skippedFieldIds: string[] = [];
+
+  for (const [fieldId, value] of Object.entries(request.values)) {
+    const referenceField =
+      request.fields?.find((field) => field.id === fieldId) ??
+      request.fields?.find((field) => field.normalizedLabel === normalizeText(fieldId));
+
+    if (!referenceField) {
+      skippedFieldIds.push(fieldId);
+      continue;
+    }
+
+    const descriptor = findDescriptorByField(root, referenceField);
+    if (!descriptor || !isVisible(descriptor.container)) {
+      skippedFieldIds.push(fieldId);
+      continue;
+    }
+
+    let success = false;
+
+    switch (descriptor.type) {
+      case "text":
+      case "textarea":
+        success = fillTextField(descriptor.control, value);
+        break;
+      case "date":
+        success = typeof value === "string" && isValidDateFillValue(value) ? fillDateField(descriptor.container, descriptor.control, value) : false;
+        break;
+      case "time":
+        success = typeof value === "string" && isValidTimeFillValue(value) ? fillTimeField(descriptor.container, descriptor.control, value) : false;
+        break;
+      case "radio":
+      case "scale":
+        if (typeof value === "string" || typeof value === "number") {
+          if (referenceField.otherOption && optionEquals(referenceField.otherOption, String(value))) {
+            success = false;
+          } else {
+            success = Boolean(selectRadioOption(descriptor.container, String(value)));
+          }
+        } else if (isChoiceWithOtherValue(value) && typeof value.selected === "string") {
+          if (referenceField.otherOption && optionEquals(referenceField.otherOption, value.selected) && !value.otherText.trim()) {
+            success = false;
+            break;
+          }
+
+          const selected = String(value.selected);
+          const match = selectRadioOption(descriptor.container, selected);
+          success = Boolean(match);
+
+          if (success && referenceField.otherOption && optionEquals(referenceField.otherOption, selected)) {
+            success = fillChoiceAttachedText(match, "radio", descriptor.container, value.otherText);
+          }
+        } else {
+          success = false;
+        }
+        break;
+      case "checkbox":
+        if (Array.isArray(value)) {
+          success = fillCheckboxGroup(descriptor.container, value.map(String));
+        } else if (isChoiceWithOtherValue(value) && Array.isArray(value.selected)) {
+          const normalizedSelected = referenceField.otherOption
+            ? value.selected.filter((item) => !optionEquals(item, referenceField.otherOption as string))
+            : value.selected;
+          success = fillCheckboxGroup(descriptor.container, normalizedSelected.map(String));
+
+          if (
+            success &&
+            referenceField.otherOption &&
+            normalizedSelected.length === value.selected.length &&
+            value.selected.some((item) => optionEquals(item, referenceField.otherOption as string)) &&
+            value.otherText.trim()
+          ) {
+            success = fillChoiceAttachedText(findAttachedOtherChoice(descriptor.container, "checkbox"), "checkbox", descriptor.container, value.otherText);
+          }
+        } else {
+          success = false;
+        }
+        break;
+      case "dropdown":
+        success = typeof value === "string" || typeof value === "number"
+          ? await fillDropdownAsync(descriptor.container, descriptor.control, String(value))
+          : value === null
+            ? await clearDropdownAsync(descriptor.container, descriptor.control)
+            : false;
         break;
       case "grid":
         success = fillGridField(descriptor.container, referenceField, value);

@@ -621,6 +621,10 @@ function coerceFieldValueForField(field: DetectedField, value: FieldValue | Prof
         return matchedOption;
       }
 
+      if (field.type === "dropdown" && getSelectableOptions(field).length === 0 && normalizedValue.trim() && !looksLikePlaceholderOption(normalizedValue)) {
+        return normalizedValue;
+      }
+
       if ((field.type === "radio" || field.type === "scale") && field.otherOption) {
         return {
           kind: "choice_with_other",
@@ -646,8 +650,14 @@ function buildFillValues(): Record<string, FieldValue> {
 
   return Object.fromEntries(
     state.activeForm.fields
-      .map((field) => [field.id, coerceFieldValueForField(field, state.values[field.id])] as const)
-      .filter(([, value]) => hasPersistableFieldValue(value)),
+      .map((field) => {
+        if (field.type === "dropdown" && hasStoredFieldValue(state.values, field.id) && state.values[field.id] === null) {
+          return [field.id, null] as const;
+        }
+
+        return [field.id, coerceFieldValueForField(field, state.values[field.id])] as const;
+      })
+      .filter(([fieldId, value]) => value === null || hasPersistableFieldValue(value) || (state.activeForm?.fields.find((field) => field.id === fieldId)?.type === "dropdown" && value === null)),
   ) as Record<string, FieldValue>;
 }
 
@@ -833,6 +843,10 @@ async function flushPendingPresetSave(): Promise<void> {
 
 function renderPresetActions(): void {
   resetPresetButton.disabled = !state.preset;
+}
+
+function getFieldDisplayLabel(fieldId: string): string {
+  return state.activeForm?.fields.find((field) => field.id === fieldId)?.label ?? fieldId;
 }
 
 function schedulePresetSave(): void {
@@ -1021,11 +1035,17 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       empty.textContent = "Select an option";
       select.append(empty);
 
-      for (const optionValue of getSelectableOptions(field)) {
+      const selectedValue = typeof value === "string" ? value : "";
+      const dropdownOptions = getSelectableOptions(field);
+      if (selectedValue && !looksLikePlaceholderOption(selectedValue) && !dropdownOptions.some((option) => optionEquals(option, selectedValue))) {
+        dropdownOptions.unshift(selectedValue);
+      }
+
+      for (const optionValue of dropdownOptions) {
         const option = document.createElement("option");
         option.value = optionValue;
         option.textContent = optionValue;
-        option.selected = String(value ?? "") === optionValue;
+        option.selected = selectedValue === optionValue;
         select.append(option);
       }
 
@@ -1494,9 +1514,16 @@ async function handleFill(): Promise<void> {
     },
   });
 
+  const skippedLabels = result.skippedFieldIds.map(getFieldDisplayLabel);
+  const skippedSummary = skippedLabels.slice(0, 3).join(", ");
+  const skippedSuffix =
+    skippedLabels.length > 0
+      ? ` Could not match: ${skippedSummary}${skippedLabels.length > 3 ? `, and ${skippedLabels.length - 3} more.` : "."}`
+      : "";
+
   setStatus(
     result.skippedFieldIds.length
-      ? `Filled ${result.filledFieldIds.length} field(s). ${result.skippedFieldIds.length} field(s) could not be matched.`
+      ? `Filled ${result.filledFieldIds.length} field(s). ${result.skippedFieldIds.length} field(s) could not be matched.${skippedSuffix}`
       : `Filled ${result.filledFieldIds.length} field(s).`,
     result.skippedFieldIds.length ? "error" : "success",
   );

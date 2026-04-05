@@ -1164,6 +1164,171 @@ describe("popup", () => {
     expect(fieldSelect.value).toBe("");
   });
 
+  it("sends an explicit null when a dropdown is set to no option before fill", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Department Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "department-form",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "dropdown",
+          required: true,
+          options: ["CSE", "EEE"],
+        },
+      ],
+    };
+
+    let fillPayload: Record<string, unknown> | null = null;
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: { values?: Record<string, unknown> } },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        fillPayload = message.payload?.values ?? null;
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["department"],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const fieldSelect = document.querySelector<HTMLElement>('[data-field-id="department"]')!
+      .querySelectorAll<HTMLSelectElement>("select")[0]!;
+    fieldSelect.value = "";
+    fieldSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(fillPayload).toEqual({ department: null });
+    });
+  });
+
+  it("keeps mapped dropdown values fillable when scan-time options are unavailable", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { department: "EEE" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Department Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "department-form",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "dropdown",
+          required: true,
+          options: [],
+        },
+      ],
+    };
+
+    let fillPayload: Record<string, unknown> | null = null;
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: { values?: Record<string, unknown> } },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        fillPayload = message.payload?.values ?? null;
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["department"],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const fieldSelect = document.querySelector<HTMLElement>('[data-field-id="department"]')!
+      .querySelectorAll<HTMLSelectElement>("select")[0]!;
+
+    expect(Array.from(fieldSelect.options).map((option) => option.textContent)).toEqual(["Select an option", "EEE"]);
+    expect(fieldSelect.value).toBe("EEE");
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(fillPayload).toEqual({ department: "EEE" });
+    });
+  });
+
   it("renders scale fields as rating choices instead of a select", async () => {
     const activeForm: ActiveFormContext = {
       title: "Rating Form",
@@ -3685,6 +3850,85 @@ describe("popup", () => {
     await vi.waitFor(() => {
       expect(document.querySelector<HTMLDivElement>("#status-card")!.textContent).toBe(
         "The active tab changed to a different Google Form. Reopen the popup on the current form and try again.",
+      );
+    });
+  });
+
+  it("includes skipped field labels in the fill status message", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "dropdown",
+          required: true,
+          options: ["CSE", "EEE"],
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["full_name"],
+            skippedFieldIds: ["department"],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLDivElement>("#status-card")!.textContent).toBe(
+        "Filled 1 field(s). 1 field(s) could not be matched. Could not match: Department.",
       );
     });
   });

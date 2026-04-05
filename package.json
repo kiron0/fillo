@@ -1,6 +1,7 @@
 {
   "name": "fillo",
   "version": "0.1.2",
+  "description": "Chrome extension for scanning Google Forms, reusing saved profile values, and filling supported fields without auto-submitting.",
   "private": true,
   "type": "module",
   "scripts": {

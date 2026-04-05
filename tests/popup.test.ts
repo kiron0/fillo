@@ -25,6 +25,9 @@ const popupHtml = `
         </div>
       </section>
       <section id="fields" class="field-list hidden"></section>
+      <section class="helper-note">
+        This popup does not enforce Google Form validation rules. Review the field requirements on the form itself, then enter a value here that matches those requirements.
+      </section>
       <footer class="footer">
         <button id="open-options"></button>
       </footer>

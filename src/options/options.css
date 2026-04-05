@@ -124,7 +124,7 @@ h3 {
 
 .toggle {
   display: grid;
-  grid-template-columns: 20px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   gap: 12px;
   align-items: center;
   padding: 8px 10px;
@@ -142,8 +142,13 @@ h3 {
 .toggle input {
   appearance: none;
   -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  min-width: 16px;
+  max-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  max-height: 16px;
+  flex: 0 0 16px;
   margin: 0;
   position: relative;
   border-radius: 4px;
@@ -159,8 +164,8 @@ h3 {
 
 .toggle input::after {
   content: "";
-  width: 8px;
-  height: 5px;
+  width: 6px;
+  height: 4px;
   position: absolute;
   top: 50%;
   left: 50%;
@@ -258,12 +263,12 @@ textarea {
 }
 
 button,
-input,
+input:not([type="checkbox"]),
 select {
   padding: 10px 12px;
 }
 
-input,
+input:not([type="checkbox"]),
 select,
 textarea {
   width: 100%;
@@ -287,7 +292,7 @@ button {
   color: var(--text);
 }
 
-input:focus-visible,
+input:not([type="checkbox"]):focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   outline: none;

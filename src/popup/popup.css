@@ -310,7 +310,7 @@ select {
 
 .checkbox-item {
   display: grid;
-  grid-template-columns: 18px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
   gap: 10px;
   min-width: 0;
@@ -328,8 +328,14 @@ select {
 .checkbox-item input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
+  display: block;
+  width: 16px;
+  min-width: 16px;
+  max-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  max-height: 16px;
+  flex: 0 0 16px;
   margin: 0;
   position: relative;
   border-radius: 4px;
@@ -346,8 +352,14 @@ select {
 .checkbox-item input[type="radio"] {
   appearance: none;
   -webkit-appearance: none;
-  width: 20px;
-  height: 20px;
+  display: block;
+  width: 16px;
+  min-width: 16px;
+  max-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  max-height: 16px;
+  flex: 0 0 16px;
   margin: 0;
   position: relative;
   border-radius: 999px;
@@ -363,8 +375,8 @@ select {
 
 .checkbox-item input[type="checkbox"]::after {
   content: "";
-  width: 8px;
-  height: 5px;
+  width: 6px;
+  height: 4px;
   position: absolute;
   top: 50%;
   left: 50%;
@@ -377,8 +389,8 @@ select {
 
 .checkbox-item input[type="radio"]::after {
   content: "";
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   position: absolute;
   top: 50%;
   left: 50%;

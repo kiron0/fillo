@@ -23,16 +23,32 @@
       </section>
 
       <section id="profile-controls" class="controls hidden">
-        <label class="select-block">
-          <span class="control-label">Profile</span>
-          <select id="profile-select" class="profile-select"></select>
-        </label>
+        <section class="controls-card">
+          <label class="select-block">
+            <span class="control-label">Profile</span>
+            <select id="profile-select" class="profile-select"></select>
+          </label>
+        </section>
 
-        <div class="actions" role="group" aria-label="Form actions">
-          <button id="reset-preset" class="button">Reset preset</button>
-          <button id="fill-form" class="button accent">Fill form</button>
-          <button id="clear-values" class="button secondary">Clear</button>
-        </div>
+        <section class="controls-card controls-card-actions">
+          <div class="actions" role="group" aria-label="Form actions">
+            <button
+              id="reset-preset"
+              class="button"
+              title="Delete the saved preset for this form from storage."
+            >
+              Delete saved preset
+            </button>
+            <button id="fill-form" class="button accent">Fill form</button>
+            <button
+              id="clear-values"
+              class="button secondary"
+              title="Clear only the values currently shown in this popup."
+            >
+              Clear current values
+            </button>
+          </div>
+        </section>
       </section>
 
       <section id="fields" class="field-list hidden"></section>

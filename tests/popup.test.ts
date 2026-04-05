@@ -15,14 +15,18 @@ const popupHtml = `
         <p id="error-message"></p>
       </section>
       <section id="profile-controls" class="controls hidden">
-        <label>
-          <select id="profile-select"></select>
-        </label>
-        <div class="actions">
-          <button id="reset-preset"></button>
-          <button id="fill-form"></button>
-          <button id="clear-values"></button>
-        </div>
+        <section class="controls-card">
+          <label>
+            <select id="profile-select"></select>
+          </label>
+        </section>
+        <section class="controls-card">
+          <div class="actions">
+            <button id="reset-preset"></button>
+            <button id="fill-form"></button>
+            <button id="clear-values"></button>
+          </div>
+        </section>
       </section>
       <section id="fields" class="field-list hidden"></section>
       <section class="helper-note">
@@ -3576,6 +3580,45 @@ describe("popup", () => {
     expect(document.querySelector<HTMLElement>(".field-description")?.textContent).toBe(
       "Use your university registration number.",
     );
+  });
+
+  it("hides the profile selector when no profiles exist", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "No Profile Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-no-profile/viewform",
+      formKey: "no-profile-form",
+      fields: [
+        {
+          id: "student_id",
+          label: "Student ID",
+          normalizedLabel: "student id",
+          type: "text",
+          required: false,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    expect(profileSelect.closest<HTMLElement>(".controls-card")?.classList.contains("hidden")).toBe(true);
+    expect((profileSelect.closest<HTMLElement>(".select-block") ?? profileSelect.parentElement)?.classList.contains("hidden")).toBe(true);
+    expect(profileSelect.options.length).toBe(0);
   });
 
   it("refuses to fill when the active tab changed to a different form", async () => {

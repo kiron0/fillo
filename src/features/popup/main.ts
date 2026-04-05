@@ -59,6 +59,8 @@ const errorMessage = document.querySelector<HTMLParagraphElement>("#error-messag
 const profileControls = document.querySelector<HTMLDivElement>("#profile-controls")!;
 const fieldsContainer = document.querySelector<HTMLDivElement>("#fields")!;
 const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+const profileSelectBlock = profileSelect.closest<HTMLElement>(".select-block") ?? profileSelect.parentElement;
+const profileCard = profileSelect.closest<HTMLElement>(".controls-card") ?? profileSelectBlock;
 const resetPresetButton = document.querySelector<HTMLButtonElement>("#reset-preset")!;
 const fillFormButton = document.querySelector<HTMLButtonElement>("#fill-form")!;
 const clearValuesButton = document.querySelector<HTMLButtonElement>("#clear-values")!;
@@ -120,7 +122,13 @@ async function sendBackgroundMessage<T>(message: BackgroundRequest): Promise<T> 
 }
 
 function renderProfileSelect(): void {
+  profileSelectBlock?.classList.toggle("hidden", state.profiles.length === 0);
+  profileCard?.classList.toggle("hidden", state.profiles.length === 0);
   profileSelect.replaceChildren();
+
+  if (state.profiles.length === 0) {
+    return;
+  }
 
   const emptyOption = document.createElement("option");
   emptyOption.value = "";

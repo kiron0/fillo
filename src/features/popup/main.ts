@@ -289,8 +289,22 @@ function restorePresetFieldValue(field: DetectedField, fieldId: string): void {
   }
 }
 
+function looksLikePlaceholderOption(label: string): boolean {
+  const normalized = normalizeText(label);
+  return (
+    normalized === "choose" ||
+    normalized === "select" ||
+    normalized === "select an option" ||
+    normalized === "choose an option"
+  );
+}
+
+function getSelectableOptions(field: DetectedField): string[] {
+  return (field.options ?? []).filter((option) => !looksLikePlaceholderOption(option));
+}
+
 function findMatchingOption(field: DetectedField, value: string): string | undefined {
-  return field.options?.find((option) => optionEquals(option, value));
+  return getSelectableOptions(field).find((option) => optionEquals(option, value));
 }
 
 function isPopupEditableField(field: DetectedField): boolean {
@@ -722,6 +736,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
     case "textarea": {
       const textarea = document.createElement("textarea");
       textarea.rows = 3;
+      textarea.placeholder = "Your answer";
       textarea.value = typeof value === "string" ? value : "";
       textarea.addEventListener("input", () => updateFieldValue(field.id, textarea.value));
       return textarea;
@@ -852,7 +867,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       empty.textContent = "Select an option";
       select.append(empty);
 
-      for (const optionValue of field.options ?? []) {
+      for (const optionValue of getSelectableOptions(field)) {
         const option = document.createElement("option");
         option.value = optionValue;
         option.textContent = optionValue;
@@ -860,7 +875,10 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
         select.append(option);
       }
 
-      select.addEventListener("change", () => updateFieldValue(field.id, select.value || null));
+      select.addEventListener("change", () => {
+        const selectedValue = select.value;
+        updateFieldValue(field.id, selectedValue && !looksLikePlaceholderOption(selectedValue) ? selectedValue : null);
+      });
       return select;
     }
     case "date":

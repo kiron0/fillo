@@ -1100,6 +1100,63 @@ describe("popup", () => {
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
   });
 
+  it("filters placeholder dropdown options and does not restore them as valid values", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Department Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "department-form",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "dropdown",
+          required: true,
+          options: ["Choose", "CSE", "EEE"],
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "department-form",
+      name: "Department Form",
+      formTitle: "Department Form",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { department: "Choose" },
+      mappings: {},
+      unmappedFieldIds: [],
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const fieldSelect = document.querySelector<HTMLElement>('[data-field-id="department"]')!
+      .querySelectorAll<HTMLSelectElement>("select")[0]!;
+    const optionLabels = Array.from(fieldSelect.options).map((option) => option.textContent);
+
+    expect(optionLabels).toEqual(["Select an option", "CSE", "EEE"]);
+    expect(fieldSelect.value).toBe("");
+  });
+
   it("drops stale hidden mappings for fields that are no longer in the form", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",
@@ -2256,6 +2313,43 @@ describe("popup", () => {
     expect(input.disabled).toBe(true);
     expect(input.placeholder).toBe("This field type is not supported yet");
     expect(document.querySelector(".mapping-row")).toBeNull();
+  });
+
+  it("shows a placeholder for textarea fields", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Essay Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "essay-form",
+      fields: [
+        {
+          id: "essay",
+          label: "Essay",
+          normalizedLabel: "essay",
+          type: "textarea",
+          required: false,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const textarea = document.querySelector<HTMLTextAreaElement>("#fields textarea")!;
+    expect(textarea.placeholder).toBe("Your answer");
   });
 
   it("reapplies the mapped value after reverting a manual edit back to it", async () => {

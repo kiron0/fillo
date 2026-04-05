@@ -2859,9 +2859,11 @@ describe("popup", () => {
 
     await loadPopupModule();
 
-    const select = document.querySelector<HTMLSelectElement>('#fields select')!;
-    select.value = "Other";
-    select.dispatchEvent(new Event("change", { bubbles: true }));
+    const otherRadio = Array.from(document.querySelectorAll<HTMLInputElement>('#fields input[type="radio"]')).find(
+      (input) => input.value === "Other",
+    )!;
+    otherRadio.checked = true;
+    otherRadio.dispatchEvent(new Event("change", { bubbles: true }));
     await vi.advanceTimersByTimeAsync(500);
 
     expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([]);
@@ -2870,6 +2872,94 @@ describe("popup", () => {
     await vi.waitFor(() => {
       expect(fillPayload).toEqual({});
     });
+  });
+
+  it("renders radio fields as radio inputs instead of a select", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Department Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "radio-render-form",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "radio",
+          required: true,
+          options: ["CSE", "EEE", "Other"],
+          otherOption: "Other",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector('#fields select')).toBeNull();
+    expect(document.querySelectorAll('#fields input[type="radio"]')).toHaveLength(3);
+  });
+
+  it("does not rerender the field list for ordinary radio selection changes", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Department Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "radio-scroll-form",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "radio",
+          required: true,
+          options: ["CSE", "EEE", "Other"],
+          otherOption: "Other",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const fieldList = document.querySelector<HTMLDivElement>("#fields")!;
+    fieldList.scrollTop = 120;
+
+    const radios = Array.from(document.querySelectorAll<HTMLInputElement>('#fields input[type="radio"]'));
+    const eeeRadio = radios.find((input) => input.value === "EEE")!;
+
+    eeeRadio.checked = true;
+    eeeRadio.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(eeeRadio.isConnected).toBe(true);
+    expect(fieldList.scrollTop).toBe(120);
+    expect(document.querySelector(".other-text-input")).toBeNull();
   });
 
   it("shows unsupported grid-only forms instead of treating them as unreadable", async () => {

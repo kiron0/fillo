@@ -276,7 +276,7 @@ select {
   gap: 8px;
 }
 
-.field-card input:not([type="checkbox"]),
+.field-card input:not([type="checkbox"]):not([type="radio"]),
 .field-card textarea,
 .field-card select {
   width: 100%;
@@ -294,7 +294,7 @@ select {
 
 .profile-select:focus-visible,
 .field-card select:focus-visible,
-.field-card input:not([type="checkbox"]):focus-visible,
+.field-card input:not([type="checkbox"]):not([type="radio"]):focus-visible,
 .field-card textarea:focus-visible {
   outline: none;
   border-color: rgba(183, 89, 46, 0.42);
@@ -343,6 +343,24 @@ select {
     box-shadow 150ms ease;
 }
 
+.checkbox-item input[type="radio"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  position: relative;
+  border-radius: 999px;
+  border: 1.5px solid rgba(64, 51, 37, 0.25);
+  background: #fffefb;
+  justify-self: center;
+  align-self: center;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
 .checkbox-item input[type="checkbox"]::after {
   content: "";
   width: 8px;
@@ -357,7 +375,27 @@ select {
   transition: transform 120ms ease;
 }
 
+.checkbox-item input[type="radio"]::after {
+  content: "";
+  width: 8px;
+  height: 8px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 999px;
+  background: white;
+  transform: translate(-50%, -50%) scale(0);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
 .checkbox-item input[type="checkbox"]:checked {
+  border-color: var(--accent-strong);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 0 0 3px rgba(183, 89, 46, 0.14);
+}
+
+.checkbox-item input[type="radio"]:checked {
   border-color: var(--accent-strong);
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
   box-shadow: 0 0 0 3px rgba(183, 89, 46, 0.14);
@@ -367,7 +405,16 @@ select {
   transform: translate(-50%, -58%) rotate(-45deg) scale(1);
 }
 
+.checkbox-item input[type="radio"]:checked::after {
+  transform: translate(-50%, -50%) scale(1);
+}
+
 .checkbox-item input[type="checkbox"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(183, 89, 46, 0.18);
+}
+
+.checkbox-item input[type="radio"]:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(183, 89, 46, 0.18);
 }
@@ -377,7 +424,16 @@ select {
   background: rgba(183, 89, 46, 0.08);
 }
 
+.checkbox-item:has(input[type="radio"]:checked) {
+  border-color: rgba(183, 89, 46, 0.28);
+  background: rgba(183, 89, 46, 0.08);
+}
+
 .checkbox-item:has(input[type="checkbox"]:focus-visible) {
+  border-color: rgba(183, 89, 46, 0.34);
+}
+
+.checkbox-item:has(input[type="radio"]:focus-visible) {
   border-color: rgba(183, 89, 46, 0.34);
 }
 

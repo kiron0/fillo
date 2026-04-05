@@ -726,7 +726,69 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       textarea.addEventListener("input", () => updateFieldValue(field.id, textarea.value));
       return textarea;
     }
-    case "radio":
+    case "radio": {
+      const wrapper = document.createElement("div");
+      wrapper.className = "choice-with-other checkbox-list";
+
+      const selectedValue = isChoiceWithOtherValue(value) && typeof value.selected === "string" ? value.selected : String(value ?? "");
+      const otherText = isChoiceWithOtherValue(value) ? value.otherText : "";
+      const radioName = `popup-radio-${field.id}`;
+      const hadOtherSelected = field.otherOption ? selectedValue === field.otherOption : false;
+
+      for (const optionValue of field.options ?? []) {
+        const label = document.createElement("label");
+        label.className = "checkbox-item";
+
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = radioName;
+        input.value = optionValue;
+        input.checked = selectedValue === optionValue;
+        input.addEventListener("change", () => {
+          if (!input.checked) {
+            return;
+          }
+
+          if (field.otherOption && optionValue === field.otherOption) {
+            updateFieldValue(field.id, {
+              kind: "choice_with_other",
+              selected: optionValue,
+              otherText,
+            });
+            renderFields();
+            return;
+          }
+
+          updateFieldValue(field.id, optionValue);
+          if (hadOtherSelected) {
+            renderFields();
+          }
+        });
+
+        const text = document.createElement("span");
+        text.textContent = optionValue;
+        label.append(input, text);
+        wrapper.append(label);
+      }
+
+      if (field.otherOption && selectedValue === field.otherOption) {
+        const otherInput = document.createElement("input");
+        otherInput.type = "text";
+        otherInput.className = "other-text-input";
+        otherInput.placeholder = `Enter ${field.otherOption.toLowerCase()} value`;
+        otherInput.value = otherText;
+        otherInput.addEventListener("input", () =>
+          updateFieldValue(field.id, {
+            kind: "choice_with_other",
+            selected: field.otherOption as string,
+            otherText: otherInput.value,
+          }),
+        );
+        wrapper.append(otherInput);
+      }
+
+      return wrapper;
+    }
     case "scale": {
       const wrapper = document.createElement("div");
       wrapper.className = "choice-with-other";
@@ -891,7 +953,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       const input = document.createElement("input");
       input.type = "text";
       input.value = typeof value === "string" || typeof value === "number" ? String(value) : "";
-      input.placeholder = "Enter a value";
+      input.placeholder = "Your answer";
       input.addEventListener("input", () => updateFieldValue(field.id, input.value));
       return input;
     }

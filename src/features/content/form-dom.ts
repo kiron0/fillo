@@ -1226,10 +1226,6 @@ function fillDropdown(container: HTMLElement, control: HTMLElement, value: strin
       }
     }
 
-    if (control.getAttribute("role") === "combobox" || control.getAttribute("role") === "listbox") {
-      return selectPopupOptionWithKeyboard(control, candidates, value);
-    }
-
     return false;
   }
 

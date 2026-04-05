@@ -1294,6 +1294,11 @@ async function fillDropdownAsync(container: HTMLElement, control: HTMLElement, v
           closePopupDropdown(control);
           return true;
         }
+
+        if (await verifyPopupSelectionFromFreshOptions(control, container, value)) {
+          closePopupDropdown(control);
+          return true;
+        }
       }
 
       if (control.getAttribute("role") === "combobox" || control.getAttribute("role") === "listbox") {
@@ -1345,6 +1350,11 @@ async function clearDropdownAsync(container: HTMLElement, control: HTMLElement):
           closePopupDropdown(control);
           return true;
         }
+
+        if (await verifyPopupSelectionFromFreshOptions(control, container, placeholderValue)) {
+          closePopupDropdown(control);
+          return true;
+        }
       }
 
       closePopupDropdown(control);
@@ -1393,6 +1403,44 @@ function didPopupSelectionCommit(control: HTMLElement, option: HTMLElement, valu
   const activeDescendantId = control.getAttribute("aria-activedescendant");
   if (activeDescendantId && option.id && activeDescendantId === option.id) {
     return true;
+  }
+
+  const controlValueCandidates = [
+    rawTextContent(control),
+    control.getAttribute("aria-label") ?? "",
+    control.getAttribute("aria-valuetext") ?? "",
+    control.getAttribute("data-selected") ?? "",
+    control.getAttribute("data-value") ?? "",
+  ];
+
+  return controlValueCandidates.some((candidate) => optionEquals(candidate, value));
+}
+
+async function verifyPopupSelectionFromFreshOptions(
+  control: HTMLElement,
+  container: HTMLElement,
+  value: string,
+): Promise<boolean> {
+  dispatchPointerMouseClickSequence(control);
+  await sleep(POPUP_KEYBOARD_STEP_DELAY_MS);
+
+  const freshCandidates = getPopupOptionNodes(control, container);
+  const freshSelected = freshCandidates.find((candidate) => {
+    const isSelected =
+      candidate.getAttribute("aria-selected") === "true" || candidate.getAttribute("aria-checked") === "true";
+    return isSelected && optionEquals(rawTextContent(candidate), value);
+  });
+
+  if (freshSelected) {
+    return true;
+  }
+
+  const activeDescendantId = control.getAttribute("aria-activedescendant");
+  if (activeDescendantId) {
+    const activeOption = document.getElementById(activeDescendantId);
+    if (activeOption && optionEquals(rawTextContent(activeOption), value)) {
+      return true;
+    }
   }
 
   const controlValueCandidates = [

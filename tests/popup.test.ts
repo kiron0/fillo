@@ -3871,9 +3871,8 @@ describe("popup", () => {
           id: "department",
           label: "Department",
           normalizedLabel: "department",
-          type: "dropdown",
+          type: "text",
           required: true,
-          options: ["CSE", "EEE"],
         },
       ],
     };
@@ -3930,6 +3929,87 @@ describe("popup", () => {
       expect(document.querySelector<HTMLDivElement>("#status-card")!.textContent).toBe(
         "Filled 1 field(s). 1 field(s) could not be matched. Could not match: Department.",
       );
+    });
+  });
+
+  it("uses a neutral review message instead of an error toast when only dropdowns are skipped", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+        {
+          id: "all_the_options",
+          label: "All the options",
+          normalizedLabel: "all the options",
+          type: "dropdown",
+          required: true,
+          options: ["Option 1", "Option 2"],
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["full_name"],
+            skippedFieldIds: ["all_the_options"],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
+      expect(statusCard.textContent).toBe(
+        "Filled 1 field(s). Review dropdown selections on the form before submitting.",
+      );
+      expect(statusCard.dataset.state).toBe("idle");
     });
   });
 });

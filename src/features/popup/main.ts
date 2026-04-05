@@ -849,6 +849,10 @@ function getFieldDisplayLabel(fieldId: string): string {
   return state.activeForm?.fields.find((field) => field.id === fieldId)?.label ?? fieldId;
 }
 
+function getFieldType(fieldId: string): DetectedField["type"] | null {
+  return state.activeForm?.fields.find((field) => field.id === fieldId)?.type ?? null;
+}
+
 function schedulePresetSave(): void {
   if (!state.activeForm) {
     return;
@@ -1515,11 +1519,24 @@ async function handleFill(): Promise<void> {
   });
 
   const skippedLabels = result.skippedFieldIds.map(getFieldDisplayLabel);
+  const skippedTypes = result.skippedFieldIds.map(getFieldType);
+  const skippedAreOnlyDropdowns =
+    result.skippedFieldIds.length > 0 && skippedTypes.every((type) => type === "dropdown");
   const skippedSummary = skippedLabels.slice(0, 3).join(", ");
   const skippedSuffix =
     skippedLabels.length > 0
       ? ` Could not match: ${skippedSummary}${skippedLabels.length > 3 ? `, and ${skippedLabels.length - 3} more.` : "."}`
       : "";
+
+  if (skippedAreOnlyDropdowns) {
+    setStatus(
+      result.filledFieldIds.length > 0
+        ? `Filled ${result.filledFieldIds.length} field(s). Review dropdown selections on the form before submitting.`
+        : "Review dropdown selections on the form before submitting.",
+      "idle",
+    );
+    return;
+  }
 
   setStatus(
     result.skippedFieldIds.length

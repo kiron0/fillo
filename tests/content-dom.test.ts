@@ -1206,6 +1206,89 @@ describe("content dom", () => {
     expect(listbox.getAttribute("data-selected")).toBe("Option 2");
   });
 
+  it("reports popup dropdowns as filled when selection is only visible on freshly rendered options", async () => {
+    document.documentElement.innerHTML = delayedListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSfreshoptions/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    let selectedValue = "Choose";
+
+    const renderOptions = () => {
+      listbox.replaceChildren();
+
+      for (const optionLabel of ["Choose", "Option 1", "Option 2"]) {
+        const option = document.createElement("div");
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", optionLabel === selectedValue ? "true" : "false");
+        option.textContent = optionLabel;
+        option.addEventListener("click", () => {
+          selectedValue = optionLabel;
+          listbox.setAttribute("aria-expanded", "false");
+          listbox.replaceChildren();
+        });
+        listbox.append(option);
+      }
+    };
+
+    listbox.addEventListener("click", () => {
+      listbox.setAttribute("aria-expanded", "true");
+      renderOptions();
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        all_the_options_0: "Option 2",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["all_the_options_0"]);
+    expect(fillResult.skippedFieldIds).toEqual([]);
+  });
+
+  it("clears popup dropdowns when the placeholder is only visible on freshly rendered options", async () => {
+    document.documentElement.innerHTML = delayedListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSclearfresh/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    let selectedValue = "Option 2";
+
+    const renderOptions = () => {
+      listbox.replaceChildren();
+
+      for (const optionLabel of ["Choose", "Option 1", "Option 2"]) {
+        const option = document.createElement("div");
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", optionLabel === selectedValue ? "true" : "false");
+        option.textContent = optionLabel;
+        option.addEventListener("click", () => {
+          selectedValue = optionLabel;
+          listbox.setAttribute("aria-expanded", "false");
+          listbox.replaceChildren();
+        });
+        listbox.append(option);
+      }
+    };
+
+    listbox.addEventListener("click", () => {
+      listbox.setAttribute("aria-expanded", "true");
+      renderOptions();
+    });
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        all_the_options_0: null,
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["all_the_options_0"]);
+    expect(fillResult.skippedFieldIds).toEqual([]);
+    expect(selectedValue).toBe("Choose");
+  });
+
   it("retries popup dropdown fill when the first open does not commit a selection and closes afterward", async () => {
     document.documentElement.innerHTML = delayedListboxHtml;
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSretrylistbox/viewform");

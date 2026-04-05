@@ -1157,6 +1157,162 @@ describe("popup", () => {
     expect(fieldSelect.value).toBe("");
   });
 
+  it("renders scale fields as rating choices instead of a select", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Rating Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "rating-form",
+      fields: [
+        {
+          id: "rating",
+          label: "Rating Star",
+          normalizedLabel: "rating star",
+          type: "scale",
+          required: true,
+          options: ["1", "2", "3", "4", "5"],
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const field = document.querySelector<HTMLElement>('[data-field-id="rating"]')!;
+    expect(field.querySelector("select")).toBeNull();
+    expect(field.querySelectorAll('.rating-item input[type="radio"]')).toHaveLength(5);
+    expect((field.querySelector<HTMLElement>(".rating-scale")!).style.getPropertyValue("--rating-columns")).toBe("5");
+    expect(Array.from(field.querySelectorAll<HTMLElement>(".rating-item-value")).map((node) => node.textContent)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+    ]);
+  });
+
+  it("does not rerender the scale field when selecting a rating", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Rating Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "rating-form",
+      fields: [
+        {
+          id: "rating",
+          label: "Rating Love",
+          normalizedLabel: "rating love",
+          type: "scale",
+          required: true,
+          options: ["1", "2", "3", "4", "5"],
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const field = document.querySelector<HTMLElement>('[data-field-id="rating"]')!;
+    const thirdOption = field.querySelector<HTMLInputElement>('.rating-item input[type="radio"][value="3"]')!;
+
+    thirdOption.checked = true;
+    thirdOption.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const fieldAfterChange = document.querySelector<HTMLElement>('[data-field-id="rating"]')!;
+    const thirdOptionAfterChange = fieldAfterChange.querySelector<HTMLInputElement>('.rating-item input[type="radio"][value="3"]')!;
+    const activeValues = Array.from(fieldAfterChange.querySelectorAll<HTMLElement>(".rating-item.is-active")).map(
+      (item) => item.dataset.optionValue,
+    );
+
+    expect(fieldAfterChange).toBe(field);
+    expect(thirdOptionAfterChange).toBe(thirdOption);
+    expect(thirdOptionAfterChange.checked).toBe(true);
+    expect(activeValues).toEqual(["1", "2", "3"]);
+  });
+
+  it("renders linear scales as plain radio rows with bound labels", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Linear Scale Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "linear-scale-form",
+      fields: [
+        {
+          id: "excitement",
+          label: "Linear scale",
+          normalizedLabel: "linear scale",
+          type: "scale",
+          required: true,
+          options: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+          scaleLowLabel: "Not excited",
+          scaleHighLabel: "Extremely excited",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const field = document.querySelector<HTMLElement>('[data-field-id="excitement"]')!;
+    expect(field.querySelector(".rating-scale")).toBeNull();
+    expect(field.querySelector(".linear-scale")).toBeTruthy();
+    expect((field.querySelector<HTMLElement>(".linear-scale")!).style.getPropertyValue("--linear-columns")).toBe("5");
+    expect(field.querySelectorAll('.linear-scale-item input[type="radio"]')).toHaveLength(10);
+    expect(Array.from(field.querySelectorAll<HTMLElement>(".linear-scale-value")).map((node) => node.textContent)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "10",
+    ]);
+    expect(field.querySelector(".linear-scale-bound-start")).toBeNull();
+    expect(field.querySelector(".linear-scale-bound-end")).toBeNull();
+  });
+
   it("drops stale hidden mappings for fields that are no longer in the form", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",
@@ -1481,6 +1637,48 @@ describe("popup", () => {
       selected: ["Other", "Math"],
       otherText: "Biology",
     });
+  });
+
+  it("preserves field list scroll position when selecting a checkbox Other option", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Preferences",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "checkbox-form",
+      fields: Array.from({ length: 12 }, (_, index) => ({
+        id: index === 11 ? "topics" : `field_${index}`,
+        label: index === 11 ? "Topics" : `Question ${index + 1}`,
+        normalizedLabel: index === 11 ? "topics" : `question ${index + 1}`,
+        type: index === 11 ? "checkbox" : "text",
+        required: false,
+        ...(index === 11 ? { options: ["Math", "Other", "Physics"], otherOption: "Other" } : {}),
+      })) as ActiveFormContext["fields"],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const fieldList = document.querySelector<HTMLDivElement>("#fields")!;
+    fieldList.scrollTop = 180;
+
+    const checkboxes = Array.from(document.querySelectorAll<HTMLInputElement>('#fields input[type="checkbox"]'));
+    checkboxes[1]!.click();
+
+    expect(document.querySelector(".other-text-input")).toBeTruthy();
+    expect(fieldList.scrollTop).toBe(180);
   });
 
   it("keeps an explicit No mapping choice after reopening the popup", async () => {

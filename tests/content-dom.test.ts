@@ -226,6 +226,34 @@ const ordinaryEmailCheckboxQuestionHtml = `
 </html>
 `;
 
+const linearScaleHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Linear Scale</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Linear scale</div>
+      <div class="scale-values">
+        <div>Not excited</div>
+        <div role="radio" aria-checked="false">1</div>
+        <div role="radio" aria-checked="false">2</div>
+        <div role="radio" aria-checked="false">3</div>
+        <div role="radio" aria-checked="false">4</div>
+        <div role="radio" aria-checked="false">5</div>
+        <div role="radio" aria-checked="false">6</div>
+        <div role="radio" aria-checked="false">7</div>
+        <div role="radio" aria-checked="false">8</div>
+        <div role="radio" aria-checked="false">9</div>
+        <div role="radio" aria-checked="false">10</div>
+        <div>Extremely excited</div>
+      </div>
+    </div>
+  </body>
+</html>
+`;
+
 const dateTimeFormHtml = `
 <!doctype html>
 <html>
@@ -411,6 +439,19 @@ describe("content dom", () => {
     expect(result.fields[0]).toMatchObject({
       type: "radio",
       options: ["Option A", "Option B"],
+    });
+  });
+
+  it("captures bound labels for linear scale questions", () => {
+    document.documentElement.innerHTML = linearScaleHtml;
+    const result = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSlinear/viewform");
+
+    expect(result.fields).toHaveLength(1);
+    expect(result.fields[0]).toMatchObject({
+      type: "scale",
+      options: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"],
+      scaleLowLabel: "Not excited",
+      scaleHighLabel: "Extremely excited",
     });
   });
 

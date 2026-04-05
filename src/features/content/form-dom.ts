@@ -412,6 +412,67 @@ function buildChoiceOptions(nodes: HTMLElement[], container: HTMLElement, role: 
   return { options, otherOption };
 }
 
+function extractScaleBoundLabels(
+  container: HTMLElement,
+  label: string,
+  options: string[],
+  helpText?: string,
+): { scaleLowLabel?: string; scaleHighLabel?: string } {
+  const ignoredValues = new Set(
+    [label, helpText, ...options]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => normalizeText(value)),
+  );
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = node.parentElement;
+      if (!parent || !isVisible(parent)) {
+        return NodeFilter.FILTER_REJECT;
+      }
+
+      if (
+        parent.closest('[role="radio"]') ||
+        parent.closest('[role="heading"]') ||
+        parent.closest('[role="note"]') ||
+        parent.closest(".gubaDc") ||
+        parent.closest(".freebirdFormviewerComponentsQuestionBaseDescription")
+      ) {
+        return NodeFilter.FILTER_REJECT;
+      }
+
+      return rawTextContent(parent) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+    },
+  });
+
+  const candidates: string[] = [];
+  let current: Node | null = walker.nextNode();
+  while (current) {
+    const text = (current.textContent ?? "").replace(/\s+/g, " ").trim();
+    const normalized = normalizeText(text);
+
+    if (
+      normalized &&
+      !ignoredValues.has(normalized) &&
+      !/^\d+(?:\s+\d+)*$/.test(normalized) &&
+      !candidates.some((candidate) => normalizeText(candidate) === normalized)
+    ) {
+      candidates.push(text);
+    }
+
+    current = walker.nextNode();
+  }
+
+  if (candidates.length >= 2) {
+    return {
+      scaleLowLabel: candidates[0],
+      scaleHighLabel: candidates[candidates.length - 1],
+    };
+  }
+
+  return {};
+}
+
 function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValue {
   return typeof value === "object" && value !== null && "kind" in value && value.kind === "choice_with_other";
 }
@@ -425,10 +486,12 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
   const radioOptions = Array.from(container.querySelectorAll<HTMLElement>('[role="radio"]')).filter(isVisible);
   if (radioOptions.length) {
     const { options, otherOption } = buildChoiceOptions(radioOptions, container, "radio");
+    const helpText = getHelpText(container);
     const numericScale = !otherOption && radioOptions.every((option) => {
       const labelText = getChoiceLabel(option);
       return !labelText || /^\d+$/.test(labelText);
     });
+    const scaleBounds = numericScale ? extractScaleBoundLabels(container, label, options, helpText) : {};
     return {
       field: {
         id: uniqueFieldId(container, label, index),
@@ -438,7 +501,9 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
         required: isRequired(container, label),
         options,
         otherOption,
-        helpText: getHelpText(container),
+        helpText,
+        scaleLowLabel: scaleBounds.scaleLowLabel,
+        scaleHighLabel: scaleBounds.scaleHighLabel,
         sectionTitle: getSectionTitle(container),
       },
       container,

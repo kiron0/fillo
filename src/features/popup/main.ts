@@ -307,6 +307,55 @@ function findMatchingOption(field: DetectedField, value: string): string | undef
   return getSelectableOptions(field).find((option) => optionEquals(option, value));
 }
 
+function getScaleIconKind(field: DetectedField): "star" | "heart" | "thumb" {
+  const normalizedLabel = normalizeText(field.label);
+  if (normalizedLabel.includes("heart") || normalizedLabel.includes("love")) {
+    return "heart";
+  }
+
+  if (normalizedLabel.includes("thumb") || normalizedLabel.includes("like")) {
+    return "thumb";
+  }
+
+  return "star";
+}
+
+function createScaleIcon(kind: "star" | "heart" | "thumb"): HTMLElement {
+  const icon = document.createElement("span");
+  icon.className = `rating-item-icon rating-item-icon-${kind}`;
+
+  switch (kind) {
+    case "heart":
+      icon.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.4 4.9 13.7a4.9 4.9 0 0 1 6.9-6.9l.2.2.2-.2a4.9 4.9 0 0 1 6.9 6.9L12 20.4Z"/></svg>';
+      break;
+    case "thumb":
+      icon.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 10V5.8c0-1.3.4-2.5 1.2-3.5L12 1l1.8 1.5c.4.3.6.8.6 1.3V10h4.1c1.2 0 2.1 1 2.1 2.1 0 .2 0 .4-.1.6l-1.7 6.6a2.2 2.2 0 0 1-2.1 1.7H10m0-11H6.5c-.8 0-1.5.7-1.5 1.5v8c0 .8.7 1.5 1.5 1.5H10"/></svg>';
+      break;
+    default:
+      icon.innerHTML =
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3.8 2.5 5 5.5.8-4 3.9.9 5.5-4.9-2.6-4.9 2.6.9-5.5-4-3.9 5.5-.8 2.5-5Z"/></svg>';
+      break;
+  }
+
+  return icon;
+}
+
+function syncScaleSelectionState(wrapper: HTMLElement, selectedValue: string): void {
+  const items = Array.from(wrapper.querySelectorAll<HTMLElement>(".rating-item"));
+  const selectedIndex = items.findIndex((item) => item.dataset.optionValue === selectedValue);
+
+  items.forEach((item, index) => {
+    item.classList.toggle("is-active", selectedIndex >= 0 && index <= selectedIndex);
+    item.classList.toggle("is-selected", index === selectedIndex);
+  });
+}
+
+function isLinearScaleField(field: DetectedField): boolean {
+  return Boolean(field.scaleLowLabel || field.scaleHighLabel);
+}
+
 function isPopupEditableField(field: DetectedField): boolean {
   switch (field.type) {
     case "text":
@@ -790,7 +839,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
         const otherInput = document.createElement("input");
         otherInput.type = "text";
         otherInput.className = "other-text-input";
-        otherInput.placeholder = `Enter ${field.otherOption.toLowerCase()} value`;
+        otherInput.placeholder = "Your answer";
         otherInput.value = otherText;
         otherInput.addEventListener("input", () =>
           updateFieldValue(field.id, {
@@ -805,58 +854,80 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       return wrapper;
     }
     case "scale": {
-      const wrapper = document.createElement("div");
-      wrapper.className = "choice-with-other";
+      if (isLinearScaleField(field)) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "linear-scale";
+        const radioName = `popup-scale-${field.id}`;
+        const options = field.options ?? [];
 
-      const select = document.createElement("select");
-      const empty = document.createElement("option");
-      empty.value = "";
-      empty.textContent = "Select an option";
-      select.append(empty);
+        wrapper.style.setProperty("--linear-columns", String(Math.min(options.length || 1, 5)));
+
+        const selectedValue = isChoiceWithOtherValue(value) && typeof value.selected === "string" ? value.selected : String(value ?? "");
+
+        for (const optionValue of options) {
+          const label = document.createElement("label");
+          label.className = "linear-scale-item";
+
+          const input = document.createElement("input");
+          input.type = "radio";
+          input.name = radioName;
+          input.value = optionValue;
+          input.checked = selectedValue === optionValue;
+          input.addEventListener("change", () => {
+            if (input.checked) {
+              updateFieldValue(field.id, optionValue);
+            }
+          });
+
+          const valueLabel = document.createElement("span");
+          valueLabel.className = "linear-scale-value";
+          valueLabel.textContent = optionValue;
+
+          const indicator = document.createElement("span");
+          indicator.className = "linear-scale-indicator";
+
+          label.append(input, valueLabel, indicator);
+          wrapper.append(label);
+        }
+        return wrapper;
+      }
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "rating-scale";
 
       const selectedValue = isChoiceWithOtherValue(value) && typeof value.selected === "string" ? value.selected : String(value ?? "");
-      const otherText = isChoiceWithOtherValue(value) ? value.otherText : "";
+      const iconKind = getScaleIconKind(field);
+      const radioName = `popup-scale-${field.id}`;
+      const options = field.options ?? [];
 
-      for (const optionValue of field.options ?? []) {
-        const option = document.createElement("option");
-        option.value = optionValue;
-        option.textContent = optionValue;
-        option.selected = selectedValue === optionValue;
-        select.append(option);
+      wrapper.style.setProperty("--rating-columns", String(Math.min(options.length || 1, 5)));
+
+      for (const optionValue of options) {
+        const label = document.createElement("label");
+        label.className = "rating-item";
+        label.dataset.optionValue = optionValue;
+
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = radioName;
+        input.value = optionValue;
+        input.checked = selectedValue === optionValue;
+        input.addEventListener("change", () => {
+          if (input.checked) {
+            updateFieldValue(field.id, optionValue);
+            syncScaleSelectionState(wrapper, optionValue);
+          }
+        });
+
+        const number = document.createElement("span");
+        number.className = "rating-item-value";
+        number.textContent = optionValue;
+
+        label.append(input, number, createScaleIcon(iconKind));
+        wrapper.append(label);
       }
 
-      select.addEventListener("change", () => {
-        if (field.otherOption && select.value === field.otherOption) {
-          updateFieldValue(field.id, {
-            kind: "choice_with_other",
-            selected: select.value,
-            otherText,
-          });
-          renderFields();
-          return;
-        }
-
-        updateFieldValue(field.id, select.value || null);
-        renderFields();
-      });
-
-      wrapper.append(select);
-
-      if (field.otherOption && selectedValue === field.otherOption) {
-        const otherInput = document.createElement("input");
-        otherInput.type = "text";
-        otherInput.className = "other-text-input";
-        otherInput.placeholder = `Enter ${field.otherOption.toLowerCase()} value`;
-        otherInput.value = otherText;
-        otherInput.addEventListener("input", () =>
-          updateFieldValue(field.id, {
-            kind: "choice_with_other",
-            selected: field.otherOption as string,
-            otherText: otherInput.value,
-          }),
-        );
-        wrapper.append(otherInput);
-      }
+      syncScaleSelectionState(wrapper, selectedValue);
 
       return wrapper;
     }
@@ -953,7 +1024,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
         const otherInput = document.createElement("input");
         otherInput.type = "text";
         otherInput.className = "other-text-input";
-        otherInput.placeholder = `Enter ${field.otherOption.toLowerCase()} value`;
+        otherInput.placeholder = "Your answer";
         otherInput.value = getCurrentOtherText();
         otherInput.addEventListener("input", () =>
           updateFieldValue(field.id, {
@@ -979,6 +1050,7 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
 }
 
 function renderFields(): void {
+  const previousScrollTop = fieldsContainer.scrollTop;
   fieldsContainer.replaceChildren();
 
   if (!state.activeForm) {
@@ -1052,6 +1124,8 @@ function renderFields(): void {
     card.append(header, body);
     fieldsContainer.append(card);
   }
+
+  fieldsContainer.scrollTop = previousScrollTop;
 }
 
 function applyProfile(profileId: string | null, autosave = true): void {

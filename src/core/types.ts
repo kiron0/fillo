@@ -33,6 +33,8 @@ export interface DetectedField {
   required: boolean;
   options?: string[];
   otherOption?: string;
+  scaleLowLabel?: string;
+  scaleHighLabel?: string;
   sectionTitle?: string;
   helpText?: string;
 }

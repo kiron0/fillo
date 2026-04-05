@@ -276,6 +276,87 @@ select {
   gap: 8px;
 }
 
+.rating-scale {
+  display: grid;
+  grid-template-columns: repeat(var(--rating-columns, 5), minmax(0, 1fr));
+  gap: 8px;
+  align-items: start;
+}
+
+.linear-scale {
+  display: grid;
+  grid-template-columns: repeat(var(--linear-columns, 5), minmax(0, 1fr));
+  gap: 10px 8px;
+  align-items: start;
+}
+
+.linear-scale-value {
+  display: block;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.linear-scale-item {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  align-items: start;
+  min-height: 52px;
+  padding: 2px 0;
+  cursor: pointer;
+}
+
+.linear-scale-item input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.linear-scale-indicator {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  border: 1.5px solid rgba(64, 51, 37, 0.25);
+  background: #fffefb;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.linear-scale-indicator::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border-radius: 999px;
+  background: white;
+  transform: translate(-50%, -50%) scale(0);
+  transform-origin: center;
+  transition: transform 120ms ease;
+}
+
+.linear-scale-item:has(input:checked) .linear-scale-indicator {
+  border-color: var(--accent-strong);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 0 0 3px rgba(183, 89, 46, 0.14);
+}
+
+.linear-scale-item:has(input:checked) .linear-scale-indicator::after {
+  transform: translate(-50%, -50%) scale(1);
+}
+
+.linear-scale-item:has(input:focus-visible) .linear-scale-indicator {
+  box-shadow: 0 0 0 3px rgba(183, 89, 46, 0.18);
+}
+
 .field-card input:not([type="checkbox"]):not([type="radio"]),
 .field-card textarea,
 .field-card select {
@@ -452,6 +533,81 @@ select {
 .checkbox-item span {
   line-height: 1.35;
   text-align: left;
+}
+
+.rating-item {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 6px 2px 8px;
+  border-radius: 12px;
+  color: #6e727a;
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+  --rating-active-color: var(--accent-strong);
+}
+
+.rating-item input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.rating-item-value {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text);
+}
+
+.rating-item-icon {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rating-item-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.rating-item.is-active {
+  color: var(--rating-active-color);
+}
+
+.rating-item:has(input:focus-visible) {
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(183, 89, 46, 0.28),
+    0 0 0 3px rgba(183, 89, 46, 0.14);
+}
+
+.rating-item.is-active .rating-item-icon svg {
+  fill: currentColor;
+}
+
+.rating-item:has(.rating-item-icon-star) {
+  --rating-active-color: #d9a311;
+}
+
+.rating-item:has(.rating-item-icon-heart) {
+  --rating-active-color: #cf3f5a;
+}
+
+.rating-item:has(.rating-item-icon-thumb) {
+  --rating-active-color: #2e7dd1;
 }
 
 .mapping-row {

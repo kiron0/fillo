@@ -1250,6 +1250,13 @@ function renderFields(): void {
 
     header.append(label);
 
+    if (field.helpText) {
+      const description = document.createElement("p");
+      description.className = "field-description";
+      description.textContent = field.helpText;
+      header.append(description);
+    }
+
     const body = document.createElement("div");
     body.className = "field-body";
     body.append(createValueControl(field, state.values[field.id] ?? null));

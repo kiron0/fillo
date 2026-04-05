@@ -3536,6 +3536,45 @@ describe("popup", () => {
     ]);
   });
 
+  it("shows field descriptions under the question label when help text exists", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Description Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-description/viewform",
+      formKey: "description-form",
+      fields: [
+        {
+          id: "student_id",
+          label: "Student ID",
+          normalizedLabel: "student id",
+          type: "text",
+          required: false,
+          helpText: "Use your university registration number.",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLElement>(".field-description")?.textContent).toBe(
+      "Use your university registration number.",
+    );
+  });
+
   it("refuses to fill when the active tab changed to a different form", async () => {
     const initialForm: ActiveFormContext = {
       title: "Form A",

@@ -3786,6 +3786,65 @@ describe("popup", () => {
     expect(profileSelect.options.length).toBe(0);
   });
 
+  it("shows a specific invalid page message for Google Form editor URLs", async () => {
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(
+              Object.fromEntries(
+                keys.map((key) => [
+                  key,
+                  key === "settings"
+                    ? {
+                        defaultProfileId: null,
+                        autoLoadMatchingProfile: false,
+                        confirmBeforeFill: false,
+                        showBackupSection: false,
+                      }
+                    : [],
+                ]),
+              ),
+            );
+          },
+          set(_value: Record<string, unknown>, callback: () => void) {
+            callback();
+          },
+          remove(_keys: string[], callback: () => void) {
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({
+              ok: true,
+              data: {
+                status: "invalid_url",
+                pageUrl: "https://docs.google.com/forms/d/1QzYIJlSM_NdFmBKnH50hmAA66KA4pBjyvTCShgzsF-c/edit",
+              },
+            });
+            return;
+          }
+
+          callback({ ok: false, error: "Unknown message" });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLParagraphElement>("#error-message")!.textContent).toBe(
+      "Open the live Google Form view page, not the editor URL.",
+    );
+    expect(document.querySelector<HTMLDivElement>("#fields")!.classList.contains("hidden")).toBe(true);
+  });
+
   it("refuses to fill when the active tab changed to a different form", async () => {
     const initialForm: ActiveFormContext = {
       title: "Form A",

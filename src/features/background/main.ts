@@ -41,6 +41,19 @@ function isGoogleFormUrl(url: string | undefined): boolean {
   }
 }
 
+function isGoogleFormEditUrl(url: string | undefined): boolean {
+  if (!url) {
+    return false;
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === "docs.google.com" && parsed.pathname.startsWith("/forms/") && parsed.pathname.endsWith("/edit");
+  } catch {
+    return false;
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -131,6 +144,17 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
             return;
           }
 
+          if (isGoogleFormEditUrl(tab.url)) {
+            sendResponse({
+              ok: true,
+              data: {
+                status: "invalid_url",
+                pageUrl: tab.url,
+              } satisfies ActiveFormLookup,
+            } satisfies MessageResponse<ActiveFormLookup>);
+            return;
+          }
+
           const scan = await scanActiveFormWithRetry(tab.id);
           sendResponse({
             ok: true,
@@ -144,7 +168,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
         }
         case "FILL_ACTIVE_FORM": {
           const tab = await getActiveTab();
-          if (!tab?.id || !isGoogleFormUrl(tab.url)) {
+          if (!tab?.id || !isGoogleFormUrl(tab.url) || isGoogleFormEditUrl(tab.url)) {
             throw new Error("Open a live Google Form before filling fields.");
           }
 

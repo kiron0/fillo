@@ -1443,12 +1443,15 @@ async function loadPopup(): Promise<void> {
   state.activeForm = lookup.context ?? null;
 
   if (lookup.status !== "ready" || !lookup.context) {
+    const isEditModeUrl = typeof lookup.pageUrl === "string" && /\/forms\/.+\/edit(?:[?#]|$)/.test(lookup.pageUrl);
     const message =
       lookup.status === "invalid_url"
-        ? "Open a Google Form URL like `docs.google.com/forms/...` in the current tab."
+        ? isEditModeUrl
+          ? "Open the live Google Form view page, not the editor URL."
+          : "Open a Google Form URL like `docs.google.com/forms/...` in the current tab."
         : lookup.status === "unsupported_only"
           ? "This form was scanned, but only unsupported field types were detected."
-        : "No active browser tab is available for scanning.";
+          : "No active browser tab is available for scanning.";
     if (lookup.status === "unsupported_only" && lookup.context) {
       setReadyState();
       state.preset = await getPresetByFormKey(lookup.context.formKey);

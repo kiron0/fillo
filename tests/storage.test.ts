@@ -9,6 +9,8 @@ import {
   saveProfile,
   saveSettings,
 } from "../src/core/storage";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { BackgroundRequest, FormPreset, Profile } from "../src/core/types";
 
 function createStorageMock() {
@@ -400,5 +402,12 @@ describe("storage", () => {
       createdAt: 1,
       updatedAt: 1,
     });
+  });
+
+  it("keeps the build manifest version in sync with package.json", async () => {
+    const packageJson = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8")) as { version: string };
+    const manifest = JSON.parse(await readFile(join(process.cwd(), "dist", "manifest.json"), "utf8")) as { version: string };
+
+    expect(manifest.version).toBe(packageJson.version);
   });
 });

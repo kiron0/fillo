@@ -80,6 +80,10 @@ async function scanActiveFormWithRetry(tabId: number): Promise<ScanResult> {
   throw new Error("Unable to scan the active Google Form.");
 }
 
+function hasSupportedFillableField(scan: ScanResult): boolean {
+  return scan.fields.some((field) => field.type !== "grid");
+}
+
 function enqueueStorageMutation<T>(action: () => Promise<T>): Promise<T> {
   const run = storageMutationQueue.then(() => action());
   storageMutationQueue = run.then(
@@ -131,7 +135,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
           sendResponse({
             ok: true,
             data: {
-              status: "ready",
+              status: hasSupportedFillableField(scan) ? "ready" : "unsupported_only",
               pageUrl: tab.url,
               context: scan,
             } satisfies ActiveFormLookup,
@@ -145,6 +149,9 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
           }
 
           const scan = await scanActiveFormWithRetry(tab.id);
+          if (scan.formKey !== message.payload.formKey) {
+            throw new Error("The active tab changed to a different Google Form. Reopen the popup on the current form and try again.");
+          }
           const result = await sendToTab<FillResult>(tab.id, {
             type: "FILL_FORM",
             payload: {

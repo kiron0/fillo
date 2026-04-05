@@ -91,7 +91,7 @@ export interface ActiveFormContext {
 }
 
 export interface ActiveFormLookup {
-  status: "ready" | "invalid_url" | "no_active_tab";
+  status: "ready" | "unsupported_only" | "invalid_url" | "no_active_tab";
   pageUrl?: string;
   context?: ActiveFormContext;
 }

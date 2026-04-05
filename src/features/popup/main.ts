@@ -1080,7 +1080,26 @@ async function loadPopup(): Promise<void> {
     const message =
       lookup.status === "invalid_url"
         ? "Open a Google Form URL like `docs.google.com/forms/...` in the current tab."
+        : lookup.status === "unsupported_only"
+          ? "This form was scanned, but only unsupported field types were detected."
         : "No active browser tab is available for scanning.";
+    if (lookup.status === "unsupported_only" && lookup.context) {
+      setReadyState();
+      state.preset = await getPresetByFormKey(lookup.context.formKey);
+      state.selectedProfileId = normalizeSelectedProfileId(
+        settings.autoLoadMatchingProfile ? settings.defaultProfileId : null,
+      );
+      formTitle.textContent = lookup.context.title;
+      formMeta.textContent = `${lookup.context.fields.length} detected field${lookup.context.fields.length === 1 ? "" : "s"}`;
+      fieldsContainer.classList.remove("hidden");
+      profileControls.classList.remove("hidden");
+      renderProfileSelect();
+      applyProfile(state.selectedProfileId, false);
+      renderPresetActions();
+      setStatus(message, "idle");
+      return;
+    }
+
     setInvalidPageState("Open a Google Form", message);
     renderProfileSelect();
     return;

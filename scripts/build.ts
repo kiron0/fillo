@@ -28,10 +28,13 @@ const entrypoints = [
   "src/features/options/main.ts",
 ].map((path) => join(root, path));
 
+const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version?: string };
+const manifestVersion = packageJson.version ?? "0.1.0";
+
 const manifest = {
   manifest_version: 3,
   name: "Fillo",
-  version: "0.1.0",
+  version: manifestVersion,
   description: "Save reusable values and fill Google Forms without auto-submitting.",
   permissions: ["storage", "activeTab", "scripting"],
   host_permissions: ["https://docs.google.com/forms/*", "https://forms.gle/*"],

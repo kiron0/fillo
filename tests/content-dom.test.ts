@@ -245,6 +245,39 @@ const dateTimeFormHtml = `
 </html>
 `;
 
+const compositeTimeFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Composite Time</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Interview time</div>
+      <input type="number" aria-label="Hour" max="23" />
+      <input type="number" aria-label="Minute" max="59" />
+    </div>
+  </body>
+</html>
+`;
+
+const compositeDateFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Composite Date</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Interview date</div>
+      <input type="number" aria-label="Month" max="12" />
+      <input type="number" aria-label="Day" max="31" />
+      <input type="number" aria-label="Year" maxlength="4" />
+    </div>
+  </body>
+</html>
+`;
+
 const duplicateLabelFormHtml = `
 <!doctype html>
 <html>
@@ -285,6 +318,25 @@ const gridOnlyFormHtml = `
   <body>
     <div role="listitem" class="Qr7Oae">
       <div role="heading">Availability</div>
+      <div role="grid"></div>
+    </div>
+  </body>
+</html>
+`;
+
+const unsupportedOnlyFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Unsupported Only</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Availability</div>
+      <div role="grid"></div>
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Preferences</div>
       <div role="grid"></div>
     </div>
   </body>
@@ -738,6 +790,55 @@ describe("content dom", () => {
     expect((document.querySelector('input[name="start_time"]') as HTMLInputElement).value).toBe("09:30");
   });
 
+  it("detects and fills composite Google Forms time inputs", () => {
+    document.documentElement.innerHTML = compositeTimeFormHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScompositetime/viewform");
+
+    expect(scan.fields).toHaveLength(1);
+    expect(scan.fields[0]).toMatchObject({
+      label: "Interview time",
+      type: "time",
+    });
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: "09:30",
+      },
+    });
+
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="number"]');
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(inputs[0]!.value).toBe("9");
+    expect(inputs[1]!.value).toBe("30");
+  });
+
+  it("detects and fills composite Google Forms date inputs", () => {
+    document.documentElement.innerHTML = compositeDateFormHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScompositedate/viewform");
+
+    expect(scan.fields).toHaveLength(1);
+    expect(scan.fields[0]).toMatchObject({
+      label: "Interview date",
+      type: "date",
+    });
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: "2026-04-05",
+      },
+    });
+
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="number"]');
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(inputs[0]!.value).toBe("4");
+    expect(inputs[1]!.value).toBe("5");
+    expect(inputs[2]!.value).toBe("2026");
+  });
+
   it("matches duplicate labels using section and help text when ids change", () => {
     document.documentElement.innerHTML = duplicateLabelFormHtml;
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSduplicate/viewform");
@@ -770,5 +871,12 @@ describe("content dom", () => {
       label: "Availability",
       type: "grid",
     });
+  });
+
+  it("returns unsupported-only scans with detected grid fields instead of an empty result", () => {
+    document.documentElement.innerHTML = unsupportedOnlyFormHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSunsupported/viewform");
+
+    expect(scan.fields.map((field) => field.type)).toEqual(["grid", "grid"]);
   });
 });

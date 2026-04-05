@@ -479,6 +479,35 @@ describe("popup", () => {
       __activeForm: activeForm,
     });
 
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "unsupported_only",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
     vi.stubGlobal("chrome", mock.chrome);
     vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
 
@@ -603,6 +632,35 @@ describe("popup", () => {
       __activeForm: activeForm,
     });
 
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "unsupported_only",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
     vi.stubGlobal("chrome", mock.chrome);
     vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
 
@@ -675,6 +733,35 @@ describe("popup", () => {
       },
       __activeForm: activeForm,
     });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "unsupported_only",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
 
     vi.stubGlobal("chrome", mock.chrome);
     vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
@@ -751,6 +838,35 @@ describe("popup", () => {
       },
       __activeForm: activeForm,
     });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "unsupported_only",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
 
     vi.stubGlobal("chrome", mock.chrome);
     vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
@@ -2784,6 +2900,35 @@ describe("popup", () => {
       __activeForm: activeForm,
     });
 
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "unsupported_only",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
     vi.stubGlobal("chrome", mock.chrome);
     vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
 
@@ -2792,5 +2937,76 @@ describe("popup", () => {
     expect(document.querySelector<HTMLHeadingElement>("#form-title")!.textContent).toBe("Availability Form");
     expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.disabled).toBe(true);
     expect(document.querySelector<HTMLDivElement>("#error-card")!.classList.contains("hidden")).toBe(true);
+    expect(document.querySelector<HTMLDivElement>("#status-card")!.textContent).toBe(
+      "This form was scanned, but only unsupported field types were detected.",
+    );
+  });
+
+  it("refuses to fill when the active tab changed to a different form", async () => {
+    const initialForm: ActiveFormContext = {
+      title: "Form A",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-form-a/viewform",
+      formKey: "form-a",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: initialForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: { formKey?: string } },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: initialForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: false,
+          error: "The active tab changed to a different Google Form. Reopen the popup on the current form and try again.",
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLDivElement>("#status-card")!.textContent).toBe(
+        "The active tab changed to a different Google Form. Reopen the popup on the current form and try again.",
+      );
+    });
   });
 });

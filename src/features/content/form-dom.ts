@@ -252,6 +252,99 @@ function findVisibleTextControl(container: HTMLElement): HTMLInputElement | HTML
   return candidates.find((candidate) => isVisible(candidate)) ?? null;
 }
 
+function getInputMetadata(input: HTMLInputElement): string {
+  return [
+    input.type,
+    input.name,
+    input.id,
+    input.placeholder,
+    input.getAttribute("aria-label"),
+    input.getAttribute("aria-describedby"),
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getVisibleTimeInputs(container: HTMLElement): { hourInput: HTMLInputElement; minuteInput: HTMLInputElement } | null {
+  const candidates = Array.from(
+    container.querySelectorAll<HTMLInputElement>('input[type="text"], input[type="number"], input[type="tel"], input[type="time"]'),
+  ).filter(isVisible);
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  const hourInput = candidates.find((input) => {
+    if (input.type === "time") {
+      return false;
+    }
+
+    const metadata = normalizeText(getInputMetadata(input));
+    return (
+      metadata.includes("hour") ||
+      /\bhh\b/.test(metadata) ||
+      input.max === "12" ||
+      input.max === "23"
+    );
+  });
+
+  const minuteInput = candidates.find((input) => {
+    if (input === hourInput || input.type === "time") {
+      return false;
+    }
+
+    const metadata = normalizeText(getInputMetadata(input));
+    return (
+      metadata.includes("minute") ||
+      /\bmm\b/.test(metadata) ||
+      input.max === "59"
+    );
+  });
+
+  return hourInput && minuteInput ? { hourInput, minuteInput } : null;
+}
+
+function getVisibleDateInputs(
+  container: HTMLElement,
+): { monthInput: HTMLInputElement; dayInput: HTMLInputElement; yearInput: HTMLInputElement } | null {
+  const candidates = Array.from(
+    container.querySelectorAll<HTMLInputElement>('input[type="text"], input[type="number"], input[type="tel"], input[type="date"]'),
+  ).filter(isVisible);
+
+  if (!candidates.length) {
+    return null;
+  }
+
+  const monthInput = candidates.find((input) => {
+    if (input.type === "date") {
+      return false;
+    }
+
+    const metadata = normalizeText(getInputMetadata(input));
+    return metadata.includes("month") || /\bmm\b/.test(metadata) || input.max === "12";
+  });
+
+  const dayInput = candidates.find((input) => {
+    if (input === monthInput || input.type === "date") {
+      return false;
+    }
+
+    const metadata = normalizeText(getInputMetadata(input));
+    return metadata.includes("day") || /\bdd\b/.test(metadata) || input.max === "31";
+  });
+
+  const yearInput = candidates.find((input) => {
+    if (input === monthInput || input === dayInput || input.type === "date") {
+      return false;
+    }
+
+    const metadata = normalizeText(getInputMetadata(input));
+    return metadata.includes("year") || /\byyyy\b/.test(metadata) || input.maxLength === 4 || input.size === 4;
+  });
+
+  return monthInput && dayInput && yearInput ? { monthInput, dayInput, yearInput } : null;
+}
+
 function findAttachedTextControl(
   node: HTMLElement,
   role: "radio" | "checkbox",
@@ -417,21 +510,21 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
     };
   }
 
-  const textInput = container.querySelector<HTMLInputElement>('input[type="text"], input[type="email"], input[type="number"], input[type="tel"], input[type="url"]');
-  if (textInput && isVisible(textInput)) {
+  const compositeTimeInputs = getVisibleTimeInputs(container);
+  if (compositeTimeInputs) {
     return {
       field: {
         id: uniqueFieldId(container, label, index),
         label,
         normalizedLabel: normalizeText(label),
-        type: "text",
+        type: "time",
         required: isRequired(container, label),
         helpText: getHelpText(container),
         sectionTitle: getSectionTitle(container),
       },
       container,
-      control: textInput,
-      type: "text",
+      control: compositeTimeInputs.hourInput,
+      type: "time",
     };
   }
 
@@ -453,6 +546,24 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
     };
   }
 
+  const compositeDateInputs = getVisibleDateInputs(container);
+  if (compositeDateInputs) {
+    return {
+      field: {
+        id: uniqueFieldId(container, label, index),
+        label,
+        normalizedLabel: normalizeText(label),
+        type: "date",
+        required: isRequired(container, label),
+        helpText: getHelpText(container),
+        sectionTitle: getSectionTitle(container),
+      },
+      container,
+      control: compositeDateInputs.yearInput,
+      type: "date",
+    };
+  }
+
   const timeInput = container.querySelector<HTMLInputElement>('input[type="time"]');
   if (timeInput && isVisible(timeInput)) {
     return {
@@ -468,6 +579,24 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
       container,
       control: timeInput,
       type: "time",
+    };
+  }
+
+  const textInput = container.querySelector<HTMLInputElement>('input[type="text"], input[type="email"], input[type="number"], input[type="tel"], input[type="url"]');
+  if (textInput && isVisible(textInput)) {
+    return {
+      field: {
+        id: uniqueFieldId(container, label, index),
+        label,
+        normalizedLabel: normalizeText(label),
+        type: "text",
+        required: isRequired(container, label),
+        helpText: getHelpText(container),
+        sectionTitle: getSectionTitle(container),
+      },
+      container,
+      control: textInput,
+      type: "text",
     };
   }
 
@@ -552,6 +681,49 @@ function fillTextField(control: HTMLElement, value: FieldValue): boolean {
   }
 
   return false;
+}
+
+function fillTimeField(container: HTMLElement, control: HTMLElement, value: string): boolean {
+  if (control instanceof HTMLInputElement && control.type === "time") {
+    return fillTextField(control, value);
+  }
+
+  const compositeInputs = getVisibleTimeInputs(container);
+  if (!compositeInputs) {
+    return false;
+  }
+
+  const match = /^(\d{2}):(\d{2})(?::\d{2})?$/.exec(value);
+  if (!match) {
+    return false;
+  }
+
+  const [, hours, minutes] = match;
+  setNativeInputValue(compositeInputs.hourInput, String(Number(hours)));
+  setNativeInputValue(compositeInputs.minuteInput, minutes);
+  return true;
+}
+
+function fillDateField(container: HTMLElement, control: HTMLElement, value: string): boolean {
+  if (control instanceof HTMLInputElement && control.type === "date") {
+    return fillTextField(control, value);
+  }
+
+  const compositeInputs = getVisibleDateInputs(container);
+  if (!compositeInputs) {
+    return false;
+  }
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    return false;
+  }
+
+  const [, year, month, day] = match;
+  setNativeInputValue(compositeInputs.monthInput, String(Number(month)));
+  setNativeInputValue(compositeInputs.dayInput, String(Number(day)));
+  setNativeInputValue(compositeInputs.yearInput, year);
+  return true;
 }
 
 function isValidDateFillValue(value: string): boolean {
@@ -773,10 +945,10 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
         success = fillTextField(descriptor.control, value);
         break;
       case "date":
-        success = typeof value === "string" && isValidDateFillValue(value) ? fillTextField(descriptor.control, value) : false;
+        success = typeof value === "string" && isValidDateFillValue(value) ? fillDateField(descriptor.container, descriptor.control, value) : false;
         break;
       case "time":
-        success = typeof value === "string" && isValidTimeFillValue(value) ? fillTextField(descriptor.control, value) : false;
+        success = typeof value === "string" && isValidTimeFillValue(value) ? fillTimeField(descriptor.container, descriptor.control, value) : false;
         break;
       case "radio":
       case "scale":

@@ -103,8 +103,20 @@ describe("options", () => {
     const mock = createStorageMock({
       profiles,
       presets: [],
+      history: [
+        {
+          id: "history-1",
+          formKey: "form-1",
+          formTitle: "Registration",
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Personal",
+          lastFilledAt: 1,
+          filledFieldCount: 2,
+          skippedFieldCount: 0,
+        },
+      ],
       settings: {
-        defaultProfileId: null,
+        defaultProfileId: "profile-1",
         autoLoadMatchingProfile: true,
         confirmBeforeFill: true,
         showBackupSection: false,
@@ -139,8 +151,20 @@ describe("options", () => {
     const mock = createStorageMock({
       profiles,
       presets: [],
+      history: [
+        {
+          id: "history-1",
+          formKey: "form-1",
+          formTitle: "Registration",
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Personal",
+          lastFilledAt: 1,
+          filledFieldCount: 2,
+          skippedFieldCount: 0,
+        },
+      ],
       settings: {
-        defaultProfileId: null,
+        defaultProfileId: "profile-1",
         autoLoadMatchingProfile: true,
         confirmBeforeFill: true,
         showBackupSection: false,
@@ -264,6 +288,56 @@ describe("options", () => {
 
     await vi.waitFor(() => {
       expect(document.querySelector("#history")?.textContent).not.toContain("with Alpha");
+    });
+  });
+
+  it("updates rendered history names immediately after saving a renamed profile", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      history: [
+        {
+          id: "history-1",
+          formKey: "form-1",
+          formTitle: "Registration",
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Alpha",
+          lastFilledAt: 1,
+          filledFieldCount: 2,
+          skippedFieldCount: 0,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    expect(document.querySelector("#history")?.textContent).toContain("with Alpha");
+
+    const nameInput = document.querySelector<HTMLInputElement>('[data-role="profile-name"]')!;
+    nameInput.value = "Alpha Renamed";
+    document.querySelector<HTMLButtonElement>(".card-actions .button.accent")!.click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#history")?.textContent).toContain("with Alpha Renamed");
+      expect(document.querySelector("#history")?.textContent).not.toContain("with Alpha |");
     });
   });
 
@@ -540,6 +614,96 @@ describe("options", () => {
     expect(refreshedAliasInput.value).toBe("Full Name, Old Email");
   });
 
+  it("refreshes a saved profile card when storage rewrites the profile id", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Personal",
+        values: { fullName: "Toufiq Hasan" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      history: [
+        {
+          id: "history-1",
+          formKey: "form-1",
+          formTitle: "Registration",
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Personal",
+          lastFilledAt: 1,
+          filledFieldCount: 2,
+          skippedFieldCount: 0,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    const originalSet = mock.chrome.storage.local.set;
+    mock.chrome.storage.local.set = (
+      value: Record<string, unknown>,
+      callback: () => void,
+    ) => {
+      if (Array.isArray(value.profiles)) {
+        value.profiles = (value.profiles as Profile[]).map((profile) =>
+          profile.id === "profile-1"
+            ? {
+                ...profile,
+                id: "profile-normalized",
+              }
+            : profile,
+        );
+      }
+
+      originalSet(value, callback);
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const card = document.querySelector<HTMLElement>('[data-profile-id="profile-1"]')!;
+    const nameInput = card.querySelector<HTMLInputElement>('[data-role="profile-name"]')!;
+    nameInput.value = "Personal";
+
+    card.querySelector<HTMLButtonElement>(".button.accent")!.click();
+
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector<HTMLElement>('[data-profile-id="profile-normalized"]'),
+      ).not.toBeNull();
+      expect(document.querySelector<HTMLSelectElement>("#default-profile")!.value).toBe(
+        "profile-normalized",
+      );
+      expect((mock.state.settings as Record<string, unknown>).defaultProfileId).toBe(
+        "profile-normalized",
+      );
+      expect(document.querySelector("#history")?.textContent).toContain(
+        "with Personal",
+      );
+    });
+
+    document
+      .querySelector<HTMLElement>('[data-profile-id="profile-normalized"]')!
+      .querySelector<HTMLButtonElement>(".card-actions button:last-child")!
+      .click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#history")?.textContent).not.toContain(
+        "with Personal",
+      );
+    });
+  });
+
   it("refreshes a newly added profile card from persisted storage state", async () => {
     const mock = createStorageMock({
       profiles: [],
@@ -562,6 +726,7 @@ describe("options", () => {
           profile.id === "profile-new"
             ? {
                 ...profile,
+                id: "profile-normalized",
                 name: "Normalized Profile",
               }
             : profile,
@@ -583,7 +748,7 @@ describe("options", () => {
     await vi.waitFor(() => {
       expect(
         document.querySelector<HTMLInputElement>(
-          '[data-profile-id="profile-new"] [data-role="profile-name"]',
+          '[data-profile-id="profile-normalized"] [data-role="profile-name"]',
         )?.value,
       ).toBe("Normalized Profile");
     });

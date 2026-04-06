@@ -1,5 +1,9 @@
 export function hasChromeRuntime(): boolean {
-  return typeof chrome !== "undefined" && Boolean(chrome.runtime);
+  return (
+    typeof chrome !== "undefined" &&
+    typeof chrome.runtime === "object" &&
+    chrome.runtime !== null
+  );
 }
 
 function getLastErrorMessage(): string | null {

@@ -50,7 +50,6 @@ body {
 
 .hero,
 .status-card,
-.preview-card,
 .error-card,
 .controls,
 .field-list,
@@ -88,7 +87,6 @@ h1 {
 }
 
 .status-card,
-.preview-card,
 .error-card,
 .controls,
 .field-list,
@@ -104,56 +102,6 @@ h1 {
 
 .status-card[data-state="success"] {
   color: var(--ok);
-}
-
-.preview-card {
-  display: grid;
-  gap: 10px;
-  background:
-    linear-gradient(180deg, rgba(38, 103, 70, 0.07), rgba(183, 89, 46, 0.04)),
-    var(--panel);
-}
-
-.preview-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  align-items: flex-start;
-}
-
-.preview-head h2,
-.preview-section h3 {
-  margin: 0;
-  font-size: 15px;
-}
-
-.preview-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.preview-stat {
-  border-radius: 14px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(64, 51, 37, 0.08);
-}
-
-.preview-stat strong {
-  display: block;
-  font-size: 18px;
-}
-
-.preview-section {
-  display: grid;
-  gap: 6px;
-}
-
-.preview-list {
-  margin: 0;
-  padding-left: 18px;
-  color: var(--muted);
 }
 
 .error-card {

@@ -1,4 +1,5 @@
 import {
+  hasChromeRuntime,
   runtimeManifestVersion,
   runtimeOpenOptionsPage,
   runtimeSendMessage,
@@ -21,6 +22,14 @@ describe("chrome-api", () => {
     });
 
     await expect(runtimeSendMessage({ type: "PING" })).rejects.toThrow("chrome.runtime is not available");
+  });
+
+  it("treats malformed truthy chrome.runtime values as unavailable", () => {
+    vi.stubGlobal("chrome", {
+      runtime: "broken",
+    });
+
+    expect(hasChromeRuntime()).toBe(false);
   });
 
   it("rejects runtimeOpenOptionsPage when chrome.runtime exists without openOptionsPage", async () => {

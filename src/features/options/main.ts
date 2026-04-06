@@ -455,18 +455,38 @@ async function persistProfile(card: HTMLElement, profile: Profile): Promise<void
 
   await saveProfile(next);
   const savedProfile =
-    (await getProfiles()).find((item) => item.id === next.id) ?? next;
-  const profileIndex = state.profiles.findIndex((item) => item.id === savedProfile.id);
+    (await getProfiles()).find(
+      (item) => item.id === profile.id || item.id === next.id || item.name === next.name,
+    ) ?? next;
+  const profileIndex = state.profiles.findIndex(
+    (item) => item.id === profile.id || item.id === savedProfile.id,
+  );
   if (profileIndex >= 0) {
     state.profiles[profileIndex] = savedProfile;
   }
-  profile.name = savedProfile.name;
-  profile.values = savedProfile.values;
-  profile.aliases = savedProfile.aliases;
-  profile.updatedAt = savedProfile.updatedAt;
+  Object.assign(profile, savedProfile);
+  if (state.settings.defaultProfileId === next.id && savedProfile.id !== next.id) {
+    state.settings = {
+      ...state.settings,
+      defaultProfileId: savedProfile.id,
+    };
+    await saveSettings(state.settings);
+    state.settings = await getSettings();
+  }
+  state.history = state.history.map((entry) =>
+    entry.lastUsedProfileId === next.id ||
+    entry.lastUsedProfileId === savedProfile.id
+      ? {
+          ...entry,
+          lastUsedProfileId: savedProfile.id,
+          lastUsedProfileName: savedProfile.name,
+        }
+      : entry,
+  );
   const refreshedCard = createProfileCard(savedProfile);
   card.replaceWith(refreshedCard);
   renderDefaultProfileOptions();
+  renderHistory();
   renderPrivacySummary();
   setStatus(`Saved profile "${savedProfile.name}".`);
 }
@@ -633,9 +653,14 @@ addProfileButton.addEventListener("click", () => {
     const profile = createEmptyProfile();
     await saveProfile(profile);
     const savedProfile =
-      (await getProfiles()).find((item) => item.id === profile.id) ?? profile;
+      (await getProfiles()).find(
+        (item) =>
+          item.id === profile.id ||
+          item.createdAt === profile.createdAt ||
+          item.name === profile.name,
+      ) ?? profile;
     const existingIndex = state.profiles.findIndex(
-      (item) => item.id === savedProfile.id,
+      (item) => item.id === profile.id || item.id === savedProfile.id,
     );
     if (existingIndex >= 0) {
       state.profiles[existingIndex] = savedProfile;

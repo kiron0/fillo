@@ -343,10 +343,41 @@ function normalizeProfileCollection(profiles: Profile[]): Profile[] {
   return Array.from(latestById.values());
 }
 
-function normalizeHistoryEntries(history: FormHistoryEntry[]): FormHistoryEntry[] {
+function normalizeHistoryEntry(
+  entry: FormHistoryEntry,
+  profiles: Profile[],
+): FormHistoryEntry {
+  if (!entry.lastUsedProfileId) {
+    return {
+      ...entry,
+      lastUsedProfileId: null,
+      lastUsedProfileName: null,
+    };
+  }
+
+  const profile = profiles.find((candidate) => candidate.id === entry.lastUsedProfileId);
+  if (!profile) {
+    return {
+      ...entry,
+      lastUsedProfileId: null,
+      lastUsedProfileName: null,
+    };
+  }
+
+  return {
+    ...entry,
+    lastUsedProfileId: profile.id,
+    lastUsedProfileName: profile.name,
+  };
+}
+
+function normalizeHistoryEntries(
+  history: FormHistoryEntry[],
+  profiles: Profile[] = [],
+): FormHistoryEntry[] {
   const latestByFormKey = new Map<string, FormHistoryEntry>();
 
-  for (const entry of history.filter(isFormHistoryEntry)) {
+  for (const entry of history.filter(isFormHistoryEntry).map((item) => normalizeHistoryEntry(item, profiles))) {
     const previous = latestByFormKey.get(entry.formKey);
     if (!previous || entry.lastFilledAt >= previous.lastFilledAt) {
       latestByFormKey.set(entry.formKey, entry);
@@ -378,8 +409,13 @@ export async function readPresetsDirect(): Promise<FormPreset[]> {
 }
 
 export async function readHistoryDirect(): Promise<FormHistoryEntry[]> {
-  const result = await storageGet<StorageShape>([STORAGE_KEYS.history]);
-  return Array.isArray(result.history) ? normalizeHistoryEntries(result.history) : [];
+  const [profiles, result] = await Promise.all([
+    readProfilesDirect(),
+    storageGet<StorageShape>([STORAGE_KEYS.history]),
+  ]);
+  return Array.isArray(result.history)
+    ? normalizeHistoryEntries(result.history, profiles)
+    : [];
 }
 
 export async function readSettingsDirect(): Promise<AppSettings> {
@@ -396,7 +432,7 @@ export async function readAllDirect(): Promise<Required<StorageShape>> {
   return {
     profiles,
     presets: Array.isArray(result.presets) ? normalizePresetCollection(result.presets) : [],
-    history: Array.isArray(result.history) ? normalizeHistoryEntries(result.history) : [],
+    history: Array.isArray(result.history) ? normalizeHistoryEntries(result.history, profiles) : [],
     settings: normalizeSettings(isAppSettings(result.settings) ? result.settings : undefined, profiles),
   };
 }
@@ -483,19 +519,12 @@ export async function saveSettingsDirect(settings: AppSettings): Promise<void> {
 
 export async function saveHistoryEntryDirect(entry: FormHistoryEntry): Promise<void> {
   const profiles = await readProfilesDirect();
-  const normalizedEntry =
-    entry.lastUsedProfileId && !profiles.some((profile) => profile.id === entry.lastUsedProfileId)
-      ? {
-          ...entry,
-          lastUsedProfileId: null,
-          lastUsedProfileName: null,
-        }
-      : entry;
+  const normalizedEntry = normalizeHistoryEntry(entry, profiles);
   const history = await readHistoryDirect();
   const filtered = history.filter((item) => item.formKey !== normalizedEntry.formKey);
   filtered.unshift(normalizedEntry);
   await storageSet({
-    [STORAGE_KEYS.history]: normalizeHistoryEntries(filtered),
+    [STORAGE_KEYS.history]: normalizeHistoryEntries(filtered, profiles),
   });
 }
 
@@ -524,7 +553,7 @@ export async function importAppDataDirect(payload: ImportedAppData): Promise<voi
   const currentState = await readAllDirect();
   const nextProfiles = Array.isArray(payload.profiles) ? normalizeProfileCollection(payload.profiles) : currentState.profiles;
   const nextPresets = Array.isArray(payload.presets) ? normalizePresetCollection(payload.presets) : currentState.presets;
-  const nextHistory = Array.isArray(payload.history) ? normalizeHistoryEntries(payload.history) : currentState.history;
+  const nextHistory = Array.isArray(payload.history) ? normalizeHistoryEntries(payload.history, nextProfiles) : currentState.history;
   await writeAllDirect({
     profiles: nextProfiles,
     presets: nextPresets,

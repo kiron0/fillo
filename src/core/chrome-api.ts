@@ -122,7 +122,8 @@ export function runtimeManifestVersion(): string | null {
   }
 
   try {
-    return chrome.runtime.getManifest().version ?? null;
+    const version = chrome.runtime.getManifest().version;
+    return typeof version === "string" ? version : null;
   } catch {
     return null;
   }

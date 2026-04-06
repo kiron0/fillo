@@ -55,6 +55,18 @@ describe("chrome-api", () => {
     expect(runtimeManifestVersion()).toBeNull();
   });
 
+  it("returns null when chrome.runtime.getManifest().version is not a string", () => {
+    vi.stubGlobal("chrome", {
+      runtime: {
+        getManifest() {
+          return { version: 42 };
+        },
+      },
+    });
+
+    expect(runtimeManifestVersion()).toBeNull();
+  });
+
   it("rejects tabsQuery when chrome.tabs.query throws synchronously", async () => {
     vi.stubGlobal("chrome", {
       runtime: {},

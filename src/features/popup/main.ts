@@ -1021,6 +1021,7 @@ function buildPresetPayload(): FormPreset | null {
 
 async function persistPreset(showStatus = false): Promise<void> {
   const commitVersion = presetCommitVersion;
+  const activeForm = state.activeForm;
   const preset = buildPresetPayload();
   pendingPresetId = preset?.id ?? state.preset?.id ?? pendingPresetId;
   if (!preset) {
@@ -1043,7 +1044,10 @@ async function persistPreset(showStatus = false): Promise<void> {
     return;
   }
 
-  state.preset = preset;
+  state.preset = activeForm
+    ? (await getPresetByFormKey(activeForm.formKey)) ?? preset
+    : preset;
+  pendingPresetId = state.preset?.id ?? pendingPresetId;
   renderPresetActions();
   if (showStatus) {
     setStatus("Preset saved locally for this form.", "success");
@@ -2045,6 +2049,7 @@ async function handleFill(): Promise<void> {
 }
 
 function handleClear(): void {
+  const activeForm = state.activeForm;
   const persistedPresetSnapshot = clonePreset(state.preset);
   presetCommitVersion += 1;
   const clearCommitVersion = presetCommitVersion;
@@ -2067,6 +2072,16 @@ function handleClear(): void {
         } else if (state.preset ?? pendingPresetId) {
           await deletePreset(state.preset?.id ?? pendingPresetId ?? "");
         }
+
+        if (clearCommitVersion !== presetCommitVersion) {
+          return;
+        }
+
+        state.preset = activeForm
+          ? await getPresetByFormKey(activeForm.formKey)
+          : null;
+        pendingPresetId = state.preset?.id ?? pendingPresetId;
+        renderPresetActions();
       })
       .finally(() => {
         if (presetSaveInFlight === restorePromise) {

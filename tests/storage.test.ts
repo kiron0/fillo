@@ -605,6 +605,7 @@ describe("storage", () => {
         formKey: "form-2",
         formTitle: "Form 2",
         lastUsedProfileId: null,
+        lastUsedProfileName: null,
         lastFilledAt: 3,
         filledFieldCount: 1,
         skippedFieldCount: 0,
@@ -613,7 +614,8 @@ describe("storage", () => {
         id: "history-new",
         formKey: "form-1",
         formTitle: "Form 1",
-        lastUsedProfileId: "profile-2",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
         lastFilledAt: 2,
         filledFieldCount: 2,
         skippedFieldCount: 1,
@@ -706,7 +708,8 @@ describe("storage", () => {
         id: "history-2",
         formKey: "form-1",
         formTitle: "Form 1",
-        lastUsedProfileId: "profile-2",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
         lastFilledAt: 10,
         filledFieldCount: 2,
         skippedFieldCount: 0,
@@ -933,6 +936,7 @@ describe("storage", () => {
         formKey: "form-1",
         formTitle: "Form 1",
         lastUsedProfileId: null,
+        lastUsedProfileName: null,
         lastFilledAt: 10,
         filledFieldCount: 1,
         skippedFieldCount: 0,
@@ -1174,6 +1178,88 @@ describe("storage", () => {
         lastUsedProfileName: null,
         lastFilledAt: 10,
         filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ]);
+  });
+
+  it("normalizes stored history names against the current profile list", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.profiles = [
+      {
+        id: "profile-1",
+        name: "Alpha Current",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    chromeWithState.state.history = [
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-1",
+        lastUsedProfileName: "Old Alpha",
+        lastFilledAt: 2,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-2",
+        formKey: "form-2",
+        formTitle: "Form 2",
+        lastUsedProfileId: null,
+        lastUsedProfileName: "Ghost",
+        lastFilledAt: 1,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+    ];
+
+    expect(await getFormHistory()).toEqual([
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-1",
+        lastUsedProfileName: "Alpha Current",
+        lastFilledAt: 2,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-2",
+        formKey: "form-2",
+        formTitle: "Form 2",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
+        lastFilledAt: 1,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+    ]);
+
+    const exported = await exportAppData();
+    expect(exported.history).toEqual([
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-1",
+        lastUsedProfileName: "Alpha Current",
+        lastFilledAt: 2,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-2",
+        formKey: "form-2",
+        formTitle: "Form 2",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
+        lastFilledAt: 1,
+        filledFieldCount: 1,
         skippedFieldCount: 0,
       },
     ]);
@@ -1464,7 +1550,8 @@ describe("storage", () => {
         id: "history-new",
         formKey: "form-1",
         formTitle: "Form 1",
-        lastUsedProfileId: "profile-2",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
         lastFilledAt: 5,
         filledFieldCount: 2,
         skippedFieldCount: 0,
@@ -1477,7 +1564,8 @@ describe("storage", () => {
         id: "history-new",
         formKey: "form-1",
         formTitle: "Form 1",
-        lastUsedProfileId: "profile-2",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
         lastFilledAt: 5,
         filledFieldCount: 2,
         skippedFieldCount: 0,

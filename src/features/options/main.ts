@@ -376,14 +376,22 @@ function createPresetCard(preset: FormPreset): HTMLElement {
         updatedAt: Date.now(),
       };
       await savePreset(nextPreset);
-      const presetIndex = state.presets.findIndex((item) => item.id === nextPreset.id);
+      const savedPreset =
+        (await getPresets()).find((item) => item.formKey === nextPreset.formKey) ??
+        nextPreset;
+      const presetIndex = state.presets.findIndex(
+        (item) =>
+          item.id === preset.id ||
+          item.id === savedPreset.id ||
+          item.formKey === savedPreset.formKey,
+      );
       if (presetIndex >= 0) {
-        state.presets[presetIndex] = nextPreset;
+        state.presets[presetIndex] = savedPreset;
       }
-      preset.name = nextPreset.name;
-      preset.updatedAt = nextPreset.updatedAt;
-      titleInput.value = nextPreset.name;
-      updatePresetCardMeta(card, nextPreset);
+      Object.assign(preset, savedPreset);
+      card.dataset.presetId = savedPreset.id;
+      titleInput.value = savedPreset.name;
+      updatePresetCardMeta(card, savedPreset);
       setStatus("Updated preset name.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Unable to rename saved form.");
@@ -624,14 +632,21 @@ addProfileButton.addEventListener("click", () => {
   void runTopLevelAction(async () => {
     const profile = createEmptyProfile();
     await saveProfile(profile);
-    if (!state.profiles.some((item) => item.id === profile.id)) {
-      state.profiles = [...state.profiles, profile];
+    const savedProfile =
+      (await getProfiles()).find((item) => item.id === profile.id) ?? profile;
+    const existingIndex = state.profiles.findIndex(
+      (item) => item.id === savedProfile.id,
+    );
+    if (existingIndex >= 0) {
+      state.profiles[existingIndex] = savedProfile;
+    } else {
+      state.profiles = [...state.profiles, savedProfile];
     }
     renderDefaultProfileOptions();
     if (state.profiles.length === 1) {
       renderProfiles();
     } else {
-      profilesContainer.append(createProfileCard(profile));
+      profilesContainer.append(createProfileCard(savedProfile));
     }
     renderPrivacySummary();
     setStatus("Added a new profile.");

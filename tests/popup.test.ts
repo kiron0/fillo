@@ -265,6 +265,89 @@ describe("popup", () => {
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
   });
 
+  it("uses the persisted saved preset identity after autosave so reset removes the saved preset", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    const originalSet = mock.chrome.storage.local.set;
+    mock.chrome.storage.local.set = (
+      value: Record<string, unknown>,
+      callback: () => void,
+    ) => {
+      if (Array.isArray(value.presets)) {
+        value.presets = (value.presets as FormPreset[]).map((preset) => ({
+          ...preset,
+          id: "preset-normalized",
+        }));
+      }
+
+      originalSet(value, callback);
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+    vi.stubGlobal("confirm", () => true);
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(
+      ".mapping-row select",
+    )!;
+    mappingSelect.value = "";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    document.querySelector<HTMLButtonElement>("#reset-preset")!.click();
+
+    await vi.waitFor(() => {
+      expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual(
+        [],
+      );
+    });
+  });
+
   it("updates the mapping dropdown immediately when a mapped field is manually changed", async () => {
     const profiles: Profile[] = [
       {
@@ -639,6 +722,78 @@ describe("popup", () => {
     expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([preset]);
     expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("");
     expect(document.querySelector<HTMLButtonElement>("#reset-preset")!.disabled).toBe(false);
+  });
+
+  it("keeps the persisted preset identity after Clear so Reset still deletes the saved preset", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Saved Name" },
+      mappings: {},
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    const originalSet = mock.chrome.storage.local.set;
+    mock.chrome.storage.local.set = (
+      value: Record<string, unknown>,
+      callback: () => void,
+    ) => {
+      if (Array.isArray(value.presets)) {
+        value.presets = (value.presets as FormPreset[]).map((item) => ({
+          ...item,
+          id: "preset-normalized",
+        }));
+      }
+
+      originalSet(value, callback);
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-2" });
+    vi.stubGlobal("confirm", () => true);
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#clear-values")!.click();
+    await vi.advanceTimersByTimeAsync(500);
+
+    document.querySelector<HTMLButtonElement>("#reset-preset")!.click();
+
+    await vi.waitFor(() => {
+      expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([]);
+    });
   });
 
   it("preserves untouched saved fields after Clear when a later autosave edits only one field", async () => {

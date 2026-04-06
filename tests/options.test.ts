@@ -1,4 +1,4 @@
-import type { Profile } from "../src/core/types";
+import type { FormPreset, Profile } from "../src/core/types";
 
 const optionsHtml = `
 <!doctype html>
@@ -538,6 +538,191 @@ describe("options", () => {
     const refreshedCard = document.querySelector<HTMLElement>('[data-profile-id="profile-1"]')!;
     const refreshedAliasInput = refreshedCard.querySelector<HTMLInputElement>('input[placeholder="Aliases"]')!;
     expect(refreshedAliasInput.value).toBe("Full Name, Old Email");
+  });
+
+  it("refreshes a newly added profile card from persisted storage state", async () => {
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    const originalSet = mock.chrome.storage.local.set;
+    mock.chrome.storage.local.set = (
+      value: Record<string, unknown>,
+      callback: () => void,
+    ) => {
+      if (Array.isArray(value.profiles)) {
+        value.profiles = (value.profiles as Profile[]).map((profile) =>
+          profile.id === "profile-new"
+            ? {
+                ...profile,
+                name: "Normalized Profile",
+              }
+            : profile,
+        );
+      }
+
+      originalSet(value, callback);
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => "profile-new"),
+    });
+
+    await loadOptionsModule();
+
+    document.querySelector<HTMLButtonElement>("#add-profile")!.click();
+
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector<HTMLInputElement>(
+          '[data-profile-id="profile-new"] [data-role="profile-name"]',
+        )?.value,
+      ).toBe("Normalized Profile");
+    });
+  });
+
+  it("refreshes a renamed preset card from persisted storage state", async () => {
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [
+        {
+          id: "preset-1",
+          name: "Registration",
+          formKey: "form-1",
+          formTitle: "Registration",
+          fields: [],
+          values: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    const originalSet = mock.chrome.storage.local.set;
+    mock.chrome.storage.local.set = (
+      value: Record<string, unknown>,
+      callback: () => void,
+    ) => {
+      if (Array.isArray(value.presets)) {
+        value.presets = value.presets.map((preset) =>
+          (preset as { id: string }).id === "preset-1"
+            ? {
+                ...(preset as Record<string, unknown>),
+                name: "Normalized Registration",
+              }
+            : preset,
+        );
+      }
+
+      originalSet(value, callback);
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const presetCard = document.querySelector<HTMLElement>(
+      '[data-preset-id="preset-1"]',
+    )!;
+    const titleInput = presetCard.querySelector<HTMLInputElement>("input")!;
+    titleInput.value = "Draft Registration";
+
+    presetCard.querySelector<HTMLButtonElement>(".button.accent")!.click();
+
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector<HTMLElement>('[data-preset-id="preset-1"] input')
+          ?.getAttribute("value") ??
+          document.querySelector<HTMLInputElement>(
+            '[data-preset-id="preset-1"] input',
+          )?.value,
+      ).toBe("Normalized Registration");
+    });
+  });
+
+  it("deletes the persisted preset after rename even when storage rewrites its id", async () => {
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [
+        {
+          id: "preset-1",
+          name: "Registration",
+          formKey: "form-1",
+          formTitle: "Registration",
+          fields: [],
+          values: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    const originalSet = mock.chrome.storage.local.set;
+    mock.chrome.storage.local.set = (
+      value: Record<string, unknown>,
+      callback: () => void,
+    ) => {
+      if (Array.isArray(value.presets)) {
+        value.presets = value.presets.map((preset) =>
+          (preset as { id: string }).id === "preset-1"
+            ? {
+                ...(preset as Record<string, unknown>),
+                id: "preset-normalized",
+              }
+            : preset,
+        );
+      }
+
+      originalSet(value, callback);
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const presetCard = document.querySelector<HTMLElement>(
+      '[data-preset-id="preset-1"]',
+    )!;
+    presetCard.querySelector<HTMLInputElement>("input")!.value = "Renamed";
+    presetCard.querySelector<HTMLButtonElement>(".button.accent")!.click();
+
+    await vi.waitFor(() => {
+      expect(
+        document.querySelector<HTMLElement>('[data-preset-id="preset-normalized"]'),
+      ).not.toBeNull();
+    });
+
+    document
+      .querySelector<HTMLElement>('[data-preset-id="preset-normalized"]')!
+      .querySelector<HTMLButtonElement>(".card-actions button:last-child")!
+      .click();
+
+    await vi.waitFor(() => {
+      expect((mock.state.presets as FormPreset[] | undefined) ?? []).toEqual([]);
+      expect(document.querySelector("#presets")?.textContent).toContain(
+        "No saved forms yet.",
+      );
+    });
   });
 
   it("rejects backup payloads without version 1", async () => {

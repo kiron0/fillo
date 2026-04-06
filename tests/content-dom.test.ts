@@ -229,6 +229,7 @@ const comboboxWithTextInputHtml = `
 </html>
 `;
 
+
 const keyboardListboxHtml = `
 <!doctype html>
 <html>
@@ -278,6 +279,26 @@ const delayedListboxHtml = `
     <div role="listitem" class="Qr7Oae">
       <div role="heading">All the options</div>
       <div role="listbox" aria-expanded="false"></div>
+    </div>
+  </body>
+</html>
+`;
+
+const keyboardClearListboxHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Keyboard Clear Listbox</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Session</div>
+      <div role="listbox" aria-expanded="false" aria-activedescendant="session-option-evening" data-selected="Evening"></div>
+    </div>
+    <div id="session-options">
+      <div id="session-option-choose" role="option">Choose</div>
+      <div id="session-option-morning" role="option">Morning</div>
+      <div id="session-option-evening" role="option" aria-selected="true">Evening</div>
     </div>
   </body>
 </html>
@@ -469,6 +490,25 @@ const duplicateLabelFormHtml = `
 </html>
 `;
 
+const duplicateLabelPlainFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Duplicate Plain Labels</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Email</div>
+      <input type="text" name="email_home" />
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Email</div>
+      <input type="text" name="email_work" />
+    </div>
+  </body>
+</html>
+`;
+
 const gridOnlyFormHtml = `
 <!doctype html>
 <html>
@@ -584,6 +624,97 @@ const flattenedRadioGridHtml = `
       <div class="row">
         <div role="radio" aria-checked="false" aria-label="Column 1, response for Row 2"></div>
         <div role="radio" aria-checked="false" aria-label="Column 2, response for Row 2"></div>
+      </div>
+    </div>
+  </body>
+</html>
+`;
+
+const pollutedTitleFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>&lt;div class="HB1eCd-X3SwIb-haAclf"&gt;JavaScript isn't enabled in your browser, so this file can't be opened.&lt;/div&gt; Test Party</title>
+    <meta property="og:title" content="Test Party" />
+  </head>
+  <body>
+    <div role="heading" aria-level="1">Test Party</div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Full Name *</div>
+      <input type="text" name="full_name" />
+    </div>
+  </body>
+</html>
+`;
+
+const publicLoadDataTitleFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>&lt;div class="HB1eCd-X3SwIb-haAclf"&gt;JavaScript isn't enabled in your browser, so this file can't be opened. Enable and reload.&lt;/div&gt;Test PartyLorem ipsum dolor sit amet, consectetur adipiscing elit.</title>
+    <script>
+      var FB_PUBLIC_LOAD_DATA_ = [null, ["Lorem ipsum dolor sit amet, consectetur adipiscing elit.", [], null, null, null, null, null, null, "Test Party", 73, null, null, null, null, null, null, null, null, null, null, [null, "Lorem ipsum dolor sit amet, consectetur adipiscing elit."], [null, "Test Party"]], "/forms"];
+    </script>
+  </head>
+  <body>
+    <div role="heading" aria-level="1">
+      &lt;div class="HB1eCd-X3SwIb-haAclf"&gt;JavaScript isn't enabled in your browser, so this file can't be opened. Enable and reload.&lt;/div&gt;Test Party
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Email *</div>
+      <input type="email" name="email" />
+    </div>
+  </body>
+</html>
+`;
+
+const fieldPollutedTitleFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>&lt;div class="HB1eCd-X3SwIb-haAclf"&gt;JavaScript isn't enabled in your browser, so this file can't be opened. Enable and reload.&lt;/div&gt; Test Party Lorem ipsum dolor sit amet toufiqhasankiron2@gmail.com Switch accounts * Indicates required question Email</title>
+    <meta property="og:title" content="Test Party" />
+  </head>
+  <body>
+    <div role="heading" aria-level="1">Test Party</div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Email *</div>
+      <input type="email" name="email" />
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Type your date</div>
+      <input type="text" name="date" />
+    </div>
+  </body>
+</html>
+`;
+
+const pollutedSectionHeaderHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Test Party</title>
+  </head>
+  <body>
+    <div>
+      <div class="HB1eCd-X3SwIb-haAclf">
+        <div class="HB1eCd-X3SwIb-i8xkGf">
+          <div class="tk3N6e-cXJiPb tk3N6e-cXJiPb-TSZdd tk3N6e-cXJiPb-GMvhG">
+            JavaScript isn't enabled in your browser, so this file can't be opened. Enable and reload.
+          </div>
+        </div>
+        <br />
+      </div>
+      Test Party Lorem ipsum dolor sit amet, consectetur adipiscing elit. toufiqhasankiron0@gmail.com Switch account * Indicates required question
+    </div>
+    <div role="list">
+      <div role="listitem" class="Qr7Oae">
+        <div role="heading">Email *</div>
+        <input type="email" name="email" />
+      </div>
+      <div role="listitem" class="Qr7Oae">
+        <div role="heading">Type your date</div>
+        <input type="text" name="date" />
       </div>
     </div>
   </body>
@@ -899,6 +1030,30 @@ describe("content dom", () => {
     expect(fillResult.skippedFieldIds).toEqual(["skills_3"]);
     expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[0].getAttribute("aria-checked")).toBe("true");
     expect(document.querySelectorAll<HTMLElement>('[role="checkbox"]')[1].getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("fills checkbox Other values in the async path", async () => {
+    document.documentElement.innerHTML = checkboxOtherBindingHtml;
+    setInteractiveRoleClicks(document);
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLScheckboxotherasync/viewform");
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: {
+          kind: "choice_with_other",
+          selected: ["Math", "Other"],
+          otherText: "Physics",
+        },
+      },
+    });
+
+    const checkboxes = Array.from(document.querySelectorAll<HTMLElement>('[role="checkbox"]'));
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(checkboxes[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(checkboxes[1]!.getAttribute("aria-checked")).toBe("true");
+    expect((document.querySelector('input[name="courses_other"]') as HTMLInputElement).value).toBe("Physics");
   });
 
   it("fills listbox options from the scoped popup instead of unrelated global options", () => {
@@ -1388,6 +1543,44 @@ describe("content dom", () => {
     expect(listbox.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("clears popup listboxes when placeholder selection only commits through keyboard navigation", async () => {
+    document.documentElement.innerHTML = keyboardClearListboxHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSkeyboardclear/viewform");
+
+    const listbox = document.querySelector('[role="listbox"]') as HTMLElement;
+    const options = Array.from(document.querySelectorAll<HTMLElement>('[role="option"]'));
+    let activeIndex = 2;
+
+    listbox.addEventListener("click", () => {
+      listbox.setAttribute("aria-expanded", "true");
+    });
+
+    listbox.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowUp") {
+        activeIndex = Math.max(0, activeIndex - 1);
+        listbox.setAttribute("aria-activedescendant", options[activeIndex]!.id);
+      }
+
+      if (event.key === "Enter") {
+        for (const [index, option] of options.entries()) {
+          option.setAttribute("aria-selected", index === activeIndex ? "true" : "false");
+        }
+        listbox.setAttribute("data-selected", options[activeIndex]!.textContent ?? "");
+      }
+    });
+
+    const result = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: null,
+      },
+    });
+
+    expect(result.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(listbox.getAttribute("data-selected")).toBe("Choose");
+  });
+
   it("does not treat a native select placeholder as a real dropdown answer", () => {
     document.documentElement.innerHTML = formHtml;
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSplaceholder/viewform");
@@ -1600,6 +1793,33 @@ describe("content dom", () => {
     expect(inputs[1]!.value).toBe("work@example.com");
   });
 
+  it("matches duplicate labels by ordinal when ids change and no extra metadata exists", () => {
+    document.documentElement.innerHTML = duplicateLabelPlainFormHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSduplicateplain/viewform");
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="text"]');
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: [
+        {
+          ...scan.fields[0]!,
+          id: "stale_duplicate_email_home_id",
+        },
+        {
+          ...scan.fields[1]!,
+          id: "stale_duplicate_email_id",
+        },
+      ],
+      values: {
+        stale_duplicate_email_id: "work@example.com",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual(["stale_duplicate_email_id"]);
+    expect(inputs[0]!.value).toBe("");
+    expect(inputs[1]!.value).toBe("work@example.com");
+  });
+
   it("extracts rows, columns, and mode for grid questions during scan", () => {
     document.documentElement.innerHTML = gridOnlyFormHtml;
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSgridonly/viewform");
@@ -1713,4 +1933,74 @@ describe("content dom", () => {
     expect(radios[2]!.getAttribute("aria-checked")).toBe("true");
     expect(radios[3]!.getAttribute("aria-checked")).toBe("false");
   });
+
+  it("prefers the visible form header when the document title is polluted by shell text", () => {
+    document.documentElement.innerHTML = pollutedTitleFormHtml;
+
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSpolluted/viewform");
+
+    expect(scan.title).toBe("Test Party");
+    expect(scan.fields).toHaveLength(1);
+  });
+
+  it("prefers FB_PUBLIC_LOAD_DATA title when document and visible headers are polluted", () => {
+    document.documentElement.innerHTML = publicLoadDataTitleFormHtml;
+
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSpublic/viewform");
+
+    expect(scan.title).toBe("Test Party");
+    expect(scan.fields).toHaveLength(1);
+  });
+
+  it("rejects title candidates polluted with question labels", () => {
+    document.documentElement.innerHTML = fieldPollutedTitleFormHtml;
+
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSfieldpolluted/viewform");
+
+    expect(scan.title).toBe("Test Party");
+    expect(scan.fields).toHaveLength(2);
+  });
+
+  it("does not treat polluted pre-list shell text as a section title", () => {
+    document.documentElement.innerHTML = pollutedSectionHeaderHtml;
+
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSsectionpolluted/viewform");
+
+    expect(scan.fields).toHaveLength(2);
+    expect(scan.fields[0]?.sectionTitle).toBeUndefined();
+    expect(scan.fields[1]?.sectionTitle).toBeUndefined();
+  });
+
+  it("clears section titles when they only repeat the form title", () => {
+    document.documentElement.innerHTML = `
+<!doctype html>
+<html>
+  <head>
+    <title>Test Party</title>
+  </head>
+  <body>
+    <div>
+      <div role="heading" aria-level="1">Test Party</div>
+    </div>
+    <div role="list">
+      <div role="listitem" class="Qr7Oae">
+        <div role="heading">Email *</div>
+        <input type="email" name="email" />
+      </div>
+      <div role="listitem" class="Qr7Oae">
+        <div role="heading">Type your date</div>
+        <input type="text" name="date" />
+      </div>
+    </div>
+  </body>
+</html>
+`;
+
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSsectiontitle/viewform");
+
+    expect(scan.title).toBe("Test Party");
+    expect(scan.fields[0]?.sectionTitle).toBeUndefined();
+    expect(scan.fields[1]?.sectionTitle).toBeUndefined();
+  });
+
 });

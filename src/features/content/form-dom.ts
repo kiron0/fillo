@@ -15,6 +15,13 @@ type FieldIdentity = {
   helpText?: string;
 };
 
+type FormTitleDebug = {
+  titleSource: string;
+  documentTitle?: string;
+  metaTitle?: string;
+  structuredTitle?: string;
+};
+
 const POPUP_OPTION_RETRY_ATTEMPTS = 8;
 const POPUP_OPTION_RETRY_DELAY_MS = 50;
 const POPUP_FILL_ATTEMPTS = 2;
@@ -202,9 +209,251 @@ function getHelpText(container: HTMLElement): string | undefined {
 }
 
 function getSectionTitle(container: HTMLElement): string | undefined {
-  const section = container.closest<HTMLElement>('[role="list"]')?.previousElementSibling;
-  const title = rawTextContent(section);
-  return title || undefined;
+  const candidateRoot = container.closest<HTMLElement>('[role="list"]')?.previousElementSibling;
+  if (!candidateRoot || !isVisible(candidateRoot)) {
+    return undefined;
+  }
+
+  const selectors = [
+    '[role="heading"][aria-level="2"]',
+    '[role="heading"][aria-level="1"]',
+    '.M7eMe',
+    '.HoXoMd',
+    'h2',
+    'h1',
+  ];
+
+  for (const selector of selectors) {
+    const candidate = candidateRoot.matches(selector)
+      ? candidateRoot
+      : candidateRoot.querySelector<HTMLElement>(selector);
+    const title = rawTextContent(candidate);
+    if (!title) {
+      continue;
+    }
+
+    if (title.length > 120 || looksLikeShellText(title)) {
+      continue;
+    }
+
+    return title;
+  }
+
+  return undefined;
+}
+
+function isQuestionContainerNode(element: Element | null): boolean {
+  return element instanceof HTMLElement && Boolean(element.closest('[role="listitem"], .Qr7Oae'));
+}
+
+function normalizeFormTitleCandidate(value: string): string {
+  return value.replace(/\s+-\s+google forms$/i, "").trim();
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function looksLikeShellText(value: string): boolean {
+  const normalized = normalizeText(value);
+  return (
+    value.includes("<div") ||
+    value.includes("&lt;div") ||
+    value.includes("</div>") ||
+    value.includes("&lt;/div") ||
+    normalized.includes("javascript isn't enabled in your browser") ||
+    normalized.includes("switch accounts") ||
+    normalized.includes("indicates required question") ||
+    normalized.includes("enable and reload")
+  );
+}
+
+function containsEmbeddedFieldLabels(value: string, fieldLabels: string[]): boolean {
+  const normalizedValue = normalizeText(value);
+  if (normalizedValue.length < 80) {
+    return false;
+  }
+
+  let matches = 0;
+  for (const label of fieldLabels) {
+    const normalizedLabel = normalizeText(label);
+    if (!normalizedLabel || normalizedLabel.length < 4) {
+      continue;
+    }
+
+    if (normalizedValue.includes(normalizedLabel)) {
+      matches += 1;
+      if (matches >= 2) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function isUsableFormTitle(value: string, fieldLabels: string[] = []): boolean {
+  const trimmed = normalizeFormTitleCandidate(value);
+  if (!trimmed) {
+    return false;
+  }
+
+  if (trimmed.length > 180) {
+    return false;
+  }
+
+  return !looksLikeShellText(trimmed) && !containsEmbeddedFieldLabels(trimmed, fieldLabels);
+}
+
+function parsePublicLoadData(root: Document): unknown[] | null {
+  const scripts = Array.from(root.querySelectorAll<HTMLScriptElement>("script"));
+
+  for (const script of scripts) {
+    const source = script.textContent ?? "";
+    if (!source.includes("FB_PUBLIC_LOAD_DATA_")) {
+      continue;
+    }
+
+    const match = source.match(/FB_PUBLIC_LOAD_DATA_\s*=\s*(\[[\s\S]*\]);?\s*$/);
+    if (!match) {
+      continue;
+    }
+
+    try {
+      const parsed = JSON.parse(match[1]);
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+}
+
+function getStructuredFormTitle(root: Document, fieldLabels: string[]): string | null {
+  const publicLoadData = parsePublicLoadData(root);
+  if (!Array.isArray(publicLoadData)) {
+    return null;
+  }
+
+  const candidates: string[] = [];
+  const metadata = publicLoadData[1];
+  if (Array.isArray(metadata)) {
+    const directTitle = metadata[8];
+    if (typeof directTitle === "string") {
+      candidates.push(directTitle);
+    }
+
+    for (const entry of metadata) {
+      if (isStringArray(entry) && entry.length === 2 && entry[0] === null && typeof entry[1] === "string") {
+        candidates.push(entry[1]);
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    if (isUsableFormTitle(candidate, fieldLabels)) {
+      return normalizeFormTitleCandidate(candidate);
+    }
+  }
+
+  return null;
+}
+
+function getFormTitle(root: Document, fieldLabels: string[]): { title: string; debug: FormTitleDebug } {
+  const documentTitle = normalizeFormTitleCandidate(root.title ?? "") || undefined;
+  const metaTitle = normalizeFormTitleCandidate(root.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content?.trim() ?? "") || undefined;
+  const structuredTitle = getStructuredFormTitle(root, fieldLabels);
+  if (structuredTitle) {
+    return {
+      title: structuredTitle,
+      debug: {
+        titleSource: "fb_public_load_data",
+        documentTitle,
+        metaTitle,
+        structuredTitle,
+      },
+    };
+  }
+
+  const directTitle = documentTitle ?? "";
+  if (isUsableFormTitle(directTitle, fieldLabels)) {
+    return {
+      title: directTitle,
+      debug: {
+        titleSource: "document_title",
+        documentTitle,
+        metaTitle,
+      },
+    };
+  }
+
+  if (isUsableFormTitle(metaTitle ?? "", fieldLabels)) {
+    return {
+      title: normalizeFormTitleCandidate(metaTitle ?? ""),
+      debug: {
+        titleSource: "meta_og_title",
+        documentTitle,
+        metaTitle,
+      },
+    };
+  }
+
+  const selectors = [
+    '[role="heading"][aria-level="1"]',
+    '.ahS2Le',
+    '.freebirdFormviewerViewHeaderTitle',
+    'h1',
+  ];
+
+  for (const selector of selectors) {
+    const candidates = Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(
+      (element) => isVisible(element) && !isQuestionContainerNode(element),
+    );
+
+    for (const candidate of candidates) {
+      const text = rawTextContent(candidate);
+      if (isUsableFormTitle(text, fieldLabels)) {
+        return {
+          title: normalizeFormTitleCandidate(text),
+          debug: {
+            titleSource: `selector:${selector}`,
+            documentTitle,
+            metaTitle,
+          },
+        };
+      }
+    }
+  }
+
+  return {
+    title: "Untitled Google Form",
+    debug: {
+      titleSource: "fallback_untitled",
+      documentTitle,
+      metaTitle,
+    },
+  };
+}
+
+function sanitizeFieldSections(fields: DetectedField[], title: string): void {
+  const normalizedTitle = normalizeText(title);
+  if (!normalizedTitle) {
+    return;
+  }
+
+  for (const field of fields) {
+    if (!field.sectionTitle) {
+      continue;
+    }
+
+    if (normalizeText(field.sectionTitle) === normalizedTitle) {
+      delete field.sectionTitle;
+      delete field.sectionKey;
+    }
+  }
 }
 
 function isRequired(container: HTMLElement, label: string): boolean {
@@ -610,9 +859,9 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
           label,
           normalizedLabel: normalizeText(label),
           type: "grid",
-          required: isRequired(container, label),
-          options: definition.columns,
-          gridRows: definition.rows.map((row) => row.label),
+        required: isRequired(container, label),
+        options: definition.columns,
+        gridRows: definition.rows.map((row) => row.label),
           gridRowIds: definition.rows.map((row) => row.id),
           gridMode: definition.mode,
           helpText: getHelpText(container),
@@ -880,13 +1129,18 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
 export function scanFormDocument(root: Document, url = root.location.href): ScanResult {
   const descriptors = getQuestionContainers(root).map(detectField).filter((value): value is FieldDescriptor => Boolean(value));
   const fields = descriptors.map((descriptor) => descriptor.field);
-  const title = rawTextContent(root.querySelector("title")) || rawTextContent(root.querySelector("h1")) || "Untitled Google Form";
+  const { title, debug } = getFormTitle(
+    root,
+    fields.map((field) => field.label),
+  );
+  sanitizeFieldSections(fields, title);
 
   return {
     title,
     url,
     formKey: createFormKey(url, title, fields.map((field) => field.label)),
     fields,
+    debug,
   };
 }
 
@@ -1017,6 +1271,27 @@ function closePopupDropdown(control: HTMLElement): void {
   document.body.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }));
   document.body.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true, button: 0 }));
   document.body.click();
+}
+
+function getPopupTextInput(control: HTMLElement, container: HTMLElement): HTMLInputElement | null {
+  const candidates = [
+    control.querySelector<HTMLInputElement>('input[type="text"]'),
+    container.querySelector<HTMLInputElement>('[role="combobox"] input[type="text"]'),
+    container.querySelector<HTMLInputElement>('input[type="text"][aria-autocomplete]'),
+  ].filter((candidate): candidate is HTMLInputElement => candidate instanceof HTMLInputElement && isVisible(candidate));
+
+  return candidates[0] ?? null;
+}
+
+function setPopupFilterValue(control: HTMLElement, container: HTMLElement, value: string): boolean {
+  const input = getPopupTextInput(control, container);
+  if (!input) {
+    return false;
+  }
+
+  input.focus();
+  setNativeInputValue(input, value);
+  return true;
 }
 
 function toggleRoleOption(node: HTMLElement): void {
@@ -1268,12 +1543,16 @@ async function fillDropdownAsync(container: HTMLElement, control: HTMLElement, v
   if (control.getAttribute("role") === "listbox" || control.getAttribute("role") === "combobox") {
     for (let fillAttempt = 0; fillAttempt < POPUP_FILL_ATTEMPTS; fillAttempt += 1) {
       dispatchPointerMouseClickSequence(control);
+      setPopupFilterValue(control, container, value);
 
       let candidates = getPopupOptionNodes(control, container);
       let option = candidates.find((candidate) => optionEquals(rawTextContent(candidate), value));
 
       for (let attempt = 0; !option && attempt < POPUP_OPTION_RETRY_ATTEMPTS; attempt += 1) {
         await sleep(POPUP_OPTION_RETRY_DELAY_MS);
+        if (attempt === 1) {
+          setPopupFilterValue(control, container, value);
+        }
         candidates = getPopupOptionNodes(control, container);
         option = candidates.find((candidate) => optionEquals(rawTextContent(candidate), value));
       }
@@ -1348,6 +1627,18 @@ async function clearDropdownAsync(container: HTMLElement, control: HTMLElement):
         }
 
         if (await verifyPopupSelectionFromFreshOptions(control, container, placeholderValue)) {
+          closePopupDropdown(control);
+          return true;
+        }
+      }
+
+      if (control.getAttribute("role") === "combobox" || control.getAttribute("role") === "listbox") {
+        const keyboardSuccess = await selectPopupOptionWithKeyboard(
+          control,
+          candidates,
+          rawTextContent(placeholderOption ?? findPlaceholderPopupOption(candidates) ?? null),
+        );
+        if (keyboardSuccess) {
           closePopupDropdown(control);
           return true;
         }
@@ -1556,7 +1847,25 @@ function fieldIdentityScore(left: FieldIdentity, right: FieldIdentity): number {
   return score;
 }
 
-function findDescriptorByField(root: Document, field: DetectedField): FieldDescriptor | null {
+function getDuplicateLabelOrdinal(fields: DetectedField[] | undefined, target: DetectedField): number {
+  if (!fields) {
+    return 0;
+  }
+
+  let ordinal = 0;
+  for (const field of fields) {
+    if (field.normalizedLabel === target.normalizedLabel) {
+      if (field.id === target.id) {
+        return ordinal;
+      }
+      ordinal += 1;
+    }
+  }
+
+  return 0;
+}
+
+function findDescriptorByField(root: Document, field: DetectedField, referenceFields?: DetectedField[]): FieldDescriptor | null {
   const descriptors = getQuestionContainers(root).map(detectField).filter((value): value is FieldDescriptor => Boolean(value));
   const referenceIdentity = buildFieldIdentity(field);
 
@@ -1576,6 +1885,14 @@ function findDescriptorByField(root: Document, field: DetectedField): FieldDescr
     }
   }
 
+  if (bestScore === 2) {
+    const sameLabelDescriptors = descriptors.filter(
+      (descriptor) => descriptor.field.normalizedLabel === referenceIdentity.normalizedLabel,
+    );
+    const ordinal = getDuplicateLabelOrdinal(referenceFields, field);
+    return sameLabelDescriptors[ordinal] ?? bestMatch;
+  }
+
   return bestScore >= 2 ? bestMatch : null;
 }
 
@@ -1593,7 +1910,7 @@ export function fillFormDocument(root: Document, request: FillRequest): FillResu
       continue;
     }
 
-    const descriptor = findDescriptorByField(root, referenceField);
+    const descriptor = findDescriptorByField(root, referenceField, request.fields);
     if (!descriptor || !isVisible(descriptor.container)) {
       skippedFieldIds.push(fieldId);
       continue;
@@ -1707,7 +2024,7 @@ export async function fillFormDocumentAsync(root: Document, request: FillRequest
       continue;
     }
 
-    const descriptor = findDescriptorByField(root, referenceField);
+    const descriptor = findDescriptorByField(root, referenceField, request.fields);
     if (!descriptor || !isVisible(descriptor.container)) {
       skippedFieldIds.push(fieldId);
       continue;
@@ -1755,16 +2072,26 @@ export async function fillFormDocumentAsync(root: Document, request: FillRequest
         if (Array.isArray(value)) {
           success = fillCheckboxGroup(descriptor.container, value.map(String));
         } else if (isChoiceWithOtherValue(value) && Array.isArray(value.selected)) {
-          const normalizedSelected = referenceField.otherOption
+          const normalizedSelected = referenceField.otherOption && !value.otherText.trim()
             ? value.selected.filter((item) => !optionEquals(item, referenceField.otherOption as string))
             : value.selected;
+
+          if (
+            referenceField.otherOption &&
+            normalizedSelected.length === value.selected.length &&
+            value.selected.some((item) => optionEquals(item, referenceField.otherOption as string)) &&
+            !value.otherText.trim()
+          ) {
+            success = false;
+            break;
+          }
+
           success = fillCheckboxGroup(descriptor.container, normalizedSelected.map(String));
 
           if (
             success &&
             referenceField.otherOption &&
-            normalizedSelected.length === value.selected.length &&
-            value.selected.some((item) => optionEquals(item, referenceField.otherOption as string)) &&
+            normalizedSelected.some((item) => optionEquals(item, referenceField.otherOption as string)) &&
             value.otherText.trim()
           ) {
             success = fillChoiceAttachedText(findAttachedOtherChoice(descriptor.container, "checkbox"), "checkbox", descriptor.container, value.otherText);

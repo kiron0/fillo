@@ -101,13 +101,35 @@ h3 {
 }
 
 .settings-grid,
-.backup-actions {
+.backup-actions,
+.backup-selectors {
   display: grid;
   gap: 12px;
 }
 
 .settings-grid {
   grid-template-columns: 1fr;
+}
+
+.backup-selectors {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 14px;
+}
+
+.selector-group {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(69, 52, 36, 0.08);
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.selector-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent-strong);
 }
 
 .settings-primary {
@@ -223,6 +245,21 @@ h3 {
   padding: 16px;
 }
 
+.privacy-panel {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(69, 52, 36, 0.08);
+}
+
+.history-item-title {
+  margin: 0;
+  font-weight: 600;
+}
+
 .profile-values {
   display: grid;
   gap: 8px;
@@ -231,7 +268,7 @@ h3 {
 
 .value-row {
   display: grid;
-  grid-template-columns: minmax(0, 180px) minmax(120px, 160px) 1fr auto;
+  grid-template-columns: minmax(0, 160px) minmax(100px, 130px) 1fr minmax(160px, 220px) auto;
   gap: 8px;
 }
 

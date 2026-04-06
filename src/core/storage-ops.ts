@@ -1,16 +1,18 @@
 import { storageGet, storageSet } from "./chrome-api";
-import { DEFAULT_SETTINGS } from "./types";
-import type { AppSettings, FormPreset, ImportedAppData, Profile } from "./types";
+import { DEFAULT_EXPORT_SELECTION, DEFAULT_SETTINGS } from "./types";
+import type { AppSettings, ExportSelection, FormHistoryEntry, FormPreset, ImportedAppData, Profile } from "./types";
 
 export const STORAGE_KEYS = {
   profiles: "profiles",
   presets: "presets",
+  history: "history",
   settings: "settings",
 } as const;
 
 type StorageShape = {
   [STORAGE_KEYS.profiles]?: Profile[];
   [STORAGE_KEYS.presets]?: FormPreset[];
+  [STORAGE_KEYS.history]?: FormHistoryEntry[];
   [STORAGE_KEYS.settings]?: AppSettings;
 };
 
@@ -42,8 +44,15 @@ function isDetectedField(value: unknown): boolean {
     typeof value.required === "boolean" &&
     typeof type === "string" &&
     allowedTypes.has(type) &&
+    (value.textSubtype === undefined ||
+      value.textSubtype === "text" ||
+      value.textSubtype === "email" ||
+      value.textSubtype === "number" ||
+      value.textSubtype === "tel" ||
+      value.textSubtype === "url") &&
     (value.options === undefined || (Array.isArray(value.options) && value.options.every((option) => typeof option === "string"))) &&
     (value.otherOption === undefined || typeof value.otherOption === "string") &&
+    (value.sectionKey === undefined || typeof value.sectionKey === "string") &&
     (value.sectionTitle === undefined || typeof value.sectionTitle === "string") &&
     (value.helpText === undefined || typeof value.helpText === "string")
   );
@@ -64,7 +73,14 @@ function isFieldValue(value: unknown): boolean {
     typeof value === "number" ||
     typeof value === "boolean" ||
     (Array.isArray(value) && value.every((item) => typeof item === "string")) ||
-    isChoiceWithOtherValue(value)
+    isChoiceWithOtherValue(value) ||
+    (isStringRecord(value) &&
+      value.kind === "grid" &&
+      isStringRecord(value.rows) &&
+      Object.values(value.rows).every(
+        (rowValue) =>
+          typeof rowValue === "string" || (Array.isArray(rowValue) && rowValue.every((item) => typeof item === "string")),
+      ))
   );
 }
 
@@ -88,7 +104,23 @@ function isProfile(value: unknown): value is Profile {
     typeof value.name === "string" &&
     typeof value.createdAt === "number" &&
     typeof value.updatedAt === "number" &&
-    Object.values(value.values).every(isProfileValue)
+    Object.values(value.values).every(isProfileValue) &&
+    (value.aliases === undefined ||
+      (isStringRecord(value.aliases) &&
+        Object.values(value.aliases).every(
+          (aliasList) => Array.isArray(aliasList) && aliasList.every((alias) => typeof alias === "string"),
+        )))
+  );
+}
+
+function isPresetSectionSnapshot(value: unknown): boolean {
+  return (
+    isStringRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    typeof value.updatedAt === "number" &&
+    Array.isArray(value.fieldIds) &&
+    value.fieldIds.every((item) => typeof item === "string")
   );
 }
 
@@ -112,24 +144,59 @@ function isFormPreset(value: unknown): value is FormPreset {
       (isStringRecord(value.mappings) && Object.values(value.mappings).every((item) => typeof item === "string"))) &&
     (value.unmappedFieldIds === undefined ||
       (Array.isArray(value.unmappedFieldIds) && value.unmappedFieldIds.every((item) => typeof item === "string"))) &&
+    (value.excludedFieldIds === undefined ||
+      (Array.isArray(value.excludedFieldIds) && value.excludedFieldIds.every((item) => typeof item === "string"))) &&
+    (value.sections === undefined || (Array.isArray(value.sections) && value.sections.every(isPresetSectionSnapshot))) &&
     (value.mappingSchemaVersion === undefined || value.mappingSchemaVersion === 2)
   );
 }
 
-export function validateImportedAppData(payload: unknown): payload is Required<ImportedAppData> {
+function isFormHistoryEntry(value: unknown): value is FormHistoryEntry {
+  return (
+    isStringRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.formKey === "string" &&
+    typeof value.formTitle === "string" &&
+    (value.formUrl === undefined || typeof value.formUrl === "string") &&
+    (value.lastUsedProfileId === null || typeof value.lastUsedProfileId === "string") &&
+    (value.lastUsedProfileName === undefined || value.lastUsedProfileName === null || typeof value.lastUsedProfileName === "string") &&
+    typeof value.lastFilledAt === "number" &&
+    typeof value.filledFieldCount === "number" &&
+    typeof value.skippedFieldCount === "number"
+  );
+}
+
+function isExportSelection(value: unknown): value is ExportSelection {
+  return (
+    isStringRecord(value) &&
+    typeof value.profiles === "boolean" &&
+    typeof value.presets === "boolean" &&
+    typeof value.settings === "boolean" &&
+    typeof value.history === "boolean"
+  );
+}
+
+export function validateImportedAppData(payload: unknown): payload is ImportedAppData {
   return (
     isStringRecord(payload) &&
     payload.version === 1 &&
-    Array.isArray(payload.profiles) &&
-    payload.profiles.every(isProfile) &&
-    Array.isArray(payload.presets) &&
-    payload.presets.every(isFormPreset) &&
-    isAppSettings(payload.settings)
+    (payload.profiles === undefined || (Array.isArray(payload.profiles) && payload.profiles.every(isProfile))) &&
+    (payload.presets === undefined || (Array.isArray(payload.presets) && payload.presets.every(isFormPreset))) &&
+    (payload.settings === undefined || isAppSettings(payload.settings)) &&
+    (payload.history === undefined || (Array.isArray(payload.history) && payload.history.every(isFormHistoryEntry))) &&
+    (payload.selection === undefined || isExportSelection({ ...DEFAULT_EXPORT_SELECTION, ...payload.selection }))
   );
 }
 
 function normalizePreset(preset: FormPreset): FormPreset {
-  const { mappings: rawMappings, unmappedFieldIds: rawUnmappedFieldIds, mappingSchemaVersion, ...rest } = preset;
+  const {
+    mappings: rawMappings,
+    unmappedFieldIds: rawUnmappedFieldIds,
+    excludedFieldIds,
+    sections,
+    mappingSchemaVersion,
+    ...rest
+  } = preset;
   const mappings = rawMappings ? { ...rawMappings } : undefined;
   const unmappedFieldIds = new Set(rawUnmappedFieldIds ?? []);
 
@@ -148,6 +215,8 @@ function normalizePreset(preset: FormPreset): FormPreset {
     ...rest,
     ...(mappings && Object.keys(mappings).length ? { mappings } : {}),
     ...(normalizedUnmappedFieldIds.length ? { unmappedFieldIds: normalizedUnmappedFieldIds } : {}),
+    ...(excludedFieldIds?.length ? { excludedFieldIds: Array.from(new Set(excludedFieldIds)) } : {}),
+    ...(sections?.length ? { sections: sections.map((section) => ({ ...section, fieldIds: Array.from(new Set(section.fieldIds)) })) } : {}),
     ...(mappingSchemaVersion === 2 ? { mappingSchemaVersion } : {}),
   };
 }
@@ -162,6 +231,11 @@ export async function readPresetsDirect(): Promise<FormPreset[]> {
   return Array.isArray(result.presets) ? result.presets.map(normalizePreset) : [];
 }
 
+export async function readHistoryDirect(): Promise<FormHistoryEntry[]> {
+  const result = await storageGet<StorageShape>([STORAGE_KEYS.history]);
+  return Array.isArray(result.history) ? [...result.history].sort((left, right) => right.lastFilledAt - left.lastFilledAt) : [];
+}
+
 export async function readSettingsDirect(): Promise<AppSettings> {
   const result = await storageGet<StorageShape>([STORAGE_KEYS.settings]);
   return { ...DEFAULT_SETTINGS, ...(result.settings ?? {}) };
@@ -172,6 +246,7 @@ export async function readAllDirect(): Promise<Required<StorageShape>> {
   return {
     profiles: Array.isArray(result.profiles) ? result.profiles : [],
     presets: Array.isArray(result.presets) ? result.presets.map(normalizePreset) : [],
+    history: Array.isArray(result.history) ? [...result.history].sort((left, right) => right.lastFilledAt - left.lastFilledAt) : [],
     settings: { ...DEFAULT_SETTINGS, ...(result.settings ?? {}) },
   };
 }
@@ -234,10 +309,24 @@ export async function saveSettingsDirect(settings: AppSettings): Promise<void> {
   await storageSet({ [STORAGE_KEYS.settings]: settings });
 }
 
+export async function saveHistoryEntryDirect(entry: FormHistoryEntry): Promise<void> {
+  const history = await readHistoryDirect();
+  const filtered = history.filter((item) => item.formKey !== entry.formKey);
+  filtered.unshift(entry);
+  await storageSet({
+    [STORAGE_KEYS.history]: filtered.slice(0, 25),
+  });
+}
+
+export async function clearHistoryDirect(): Promise<void> {
+  await storageSet({ [STORAGE_KEYS.history]: [] });
+}
+
 export async function clearAllDataDirect(): Promise<void> {
   await writeAllDirect({
     profiles: [],
     presets: [],
+    history: [],
     settings: DEFAULT_SETTINGS,
   });
 }
@@ -248,12 +337,17 @@ export async function importAppDataDirect(payload: ImportedAppData): Promise<voi
   }
 
   if (!validateImportedAppData(payload)) {
-    throw new Error("Import payload must be a valid version 1 backup with well-formed profiles, presets, and settings.");
+    throw new Error("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
   }
 
+  const currentState = await readAllDirect();
+  const nextProfiles = Array.isArray(payload.profiles) ? payload.profiles : currentState.profiles;
+  const nextPresets = Array.isArray(payload.presets) ? payload.presets : currentState.presets;
+  const nextHistory = Array.isArray(payload.history) ? payload.history : currentState.history;
   await writeAllDirect({
-    profiles: payload.profiles,
-    presets: payload.presets.map(normalizePreset),
-    settings: { ...DEFAULT_SETTINGS, ...payload.settings },
+    profiles: nextProfiles,
+    presets: nextPresets.map(normalizePreset),
+    history: nextHistory,
+    settings: payload.settings ? { ...DEFAULT_SETTINGS, ...payload.settings } : currentState.settings,
   });
 }

@@ -36,6 +36,7 @@ export interface DetectedField {
   normalizedLabel: string;
   type: FieldType;
   required: boolean;
+  textSubtype?: "text" | "email" | "number" | "tel" | "url";
   options?: string[];
   otherOption?: string;
   gridRows?: string[];
@@ -43,6 +44,7 @@ export interface DetectedField {
   gridMode?: "radio" | "checkbox";
   scaleLowLabel?: string;
   scaleHighLabel?: string;
+  sectionKey?: string;
   sectionTitle?: string;
   helpText?: string;
 }
@@ -51,7 +53,15 @@ export interface Profile {
   id: string;
   name: string;
   values: Record<string, ProfileValue>;
+  aliases?: Record<string, string[]>;
   createdAt: number;
+  updatedAt: number;
+}
+
+export interface PresetSectionSnapshot {
+  id: string;
+  title: string;
+  fieldIds: string[];
   updatedAt: number;
 }
 
@@ -65,6 +75,8 @@ export interface FormPreset {
   values: Record<string, FieldValue>;
   mappings?: Record<string, string>;
   unmappedFieldIds?: string[];
+  excludedFieldIds?: string[];
+  sections?: PresetSectionSnapshot[];
   mappingSchemaVersion?: 2;
   createdAt: number;
   updatedAt: number;
@@ -77,12 +89,33 @@ export interface AppSettings {
   showBackupSection: boolean;
 }
 
+export interface FormHistoryEntry {
+  id: string;
+  formKey: string;
+  formTitle: string;
+  formUrl?: string;
+  lastUsedProfileId: string | null;
+  lastUsedProfileName?: string | null;
+  lastFilledAt: number;
+  filledFieldCount: number;
+  skippedFieldCount: number;
+}
+
+export interface ExportSelection {
+  profiles: boolean;
+  presets: boolean;
+  settings: boolean;
+  history: boolean;
+}
+
 export interface ExportedAppData {
   version: 1;
   exportedAt: number;
-  profiles: Profile[];
-  presets: FormPreset[];
-  settings: AppSettings;
+  selection: ExportSelection;
+  profiles?: Profile[];
+  presets?: FormPreset[];
+  settings?: AppSettings;
+  history?: FormHistoryEntry[];
 }
 
 export interface ImportedAppData {
@@ -91,6 +124,8 @@ export interface ImportedAppData {
   profiles?: Profile[];
   presets?: FormPreset[];
   settings?: AppSettings;
+  history?: FormHistoryEntry[];
+  selection?: Partial<ExportSelection>;
 }
 
 export interface ActiveFormContext {
@@ -98,6 +133,12 @@ export interface ActiveFormContext {
   url: string;
   formKey: string;
   fields: DetectedField[];
+  debug?: {
+    titleSource: string;
+    documentTitle?: string;
+    metaTitle?: string;
+    structuredTitle?: string;
+  };
 }
 
 export interface ActiveFormLookup {
@@ -129,6 +170,8 @@ export type BackgroundRequest =
         | { kind: "delete_profile"; profileId: string }
         | { kind: "save_preset"; preset: FormPreset }
         | { kind: "delete_preset"; presetId: string }
+        | { kind: "save_history_entry"; entry: FormHistoryEntry }
+        | { kind: "clear_history" }
         | { kind: "save_settings"; settings: AppSettings }
         | { kind: "clear_all_data" }
         | { kind: "import_app_data"; data: ImportedAppData };
@@ -144,4 +187,11 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoLoadMatchingProfile: true,
   confirmBeforeFill: true,
   showBackupSection: false,
+};
+
+export const DEFAULT_EXPORT_SELECTION: ExportSelection = {
+  profiles: true,
+  presets: true,
+  settings: true,
+  history: true,
 };

@@ -50,6 +50,7 @@ body {
 
 .hero,
 .status-card,
+.preview-card,
 .error-card,
 .controls,
 .field-list,
@@ -87,6 +88,7 @@ h1 {
 }
 
 .status-card,
+.preview-card,
 .error-card,
 .controls,
 .field-list,
@@ -102,6 +104,56 @@ h1 {
 
 .status-card[data-state="success"] {
   color: var(--ok);
+}
+
+.preview-card {
+  display: grid;
+  gap: 10px;
+  background:
+    linear-gradient(180deg, rgba(38, 103, 70, 0.07), rgba(183, 89, 46, 0.04)),
+    var(--panel);
+}
+
+.preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.preview-head h2,
+.preview-section h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.preview-stat {
+  border-radius: 14px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(64, 51, 37, 0.08);
+}
+
+.preview-stat strong {
+  display: block;
+  font-size: 18px;
+}
+
+.preview-section {
+  display: grid;
+  gap: 6px;
+}
+
+.preview-list {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
 }
 
 .error-card {
@@ -163,7 +215,7 @@ h1 {
 
 .actions {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
 }
 
@@ -241,11 +293,44 @@ select {
   overflow: auto;
 }
 
+.field-section {
+  display: grid;
+  gap: 10px;
+}
+
+.field-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.field-section-title {
+  margin: 0;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+}
+
+.field-section-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .field-card {
   padding: 12px;
   border-radius: 14px;
   background: white;
   border: 1px solid rgba(64, 51, 37, 0.08);
+}
+
+.field-card[data-review-state="warning"] {
+  border-color: rgba(140, 47, 57, 0.28);
+  box-shadow: inset 0 0 0 1px rgba(140, 47, 57, 0.08);
+}
+
+.field-card[data-review-state="excluded"] {
+  opacity: 0.74;
 }
 
 .helper-note {
@@ -258,6 +343,13 @@ select {
   display: grid;
   gap: 6px;
   margin-bottom: 10px;
+}
+
+.field-topline {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: flex-start;
 }
 
 .field-label {
@@ -286,6 +378,20 @@ select {
   flex-wrap: wrap;
 }
 
+.field-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 78px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(64, 51, 37, 0.1);
+  background: rgba(255, 250, 243, 0.95);
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
 .badge {
   padding: 3px 8px;
   border-radius: 999px;
@@ -297,6 +403,16 @@ select {
 .badge.required {
   background: rgba(140, 47, 57, 0.1);
   color: var(--danger);
+}
+
+.badge.warning {
+  background: rgba(140, 47, 57, 0.1);
+  color: var(--danger);
+}
+
+.badge.muted {
+  background: rgba(113, 98, 81, 0.12);
+  color: var(--muted);
 }
 
 .field-body {
@@ -705,6 +821,14 @@ select {
 .select-block span,
 .mapping-row span {
   overflow-wrap: anywhere;
+}
+
+kbd {
+  border-radius: 6px;
+  padding: 1px 5px;
+  background: rgba(64, 51, 37, 0.08);
+  border: 1px solid rgba(64, 51, 37, 0.12);
+  font-size: 11px;
 }
 
 .hidden {

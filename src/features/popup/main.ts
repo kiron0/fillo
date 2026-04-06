@@ -1,7 +1,7 @@
 import { hasChromeRuntime, runtimeOpenOptionsPage, runtimeSendMessage } from "../../core/chrome-api";
-import { suggestProfileKey } from "../../core/matching";
+import { rankProfilesForFields, suggestProfileKey } from "../../core/matching";
 import { normalizeText, optionEquals } from "../../core/normalization";
-import { deletePreset, getPresetByFormKey, getProfiles, getSettings, savePreset } from "../../core/storage";
+import { deletePreset, getFormHistory, getPresetByFormKey, getProfiles, getSettings, saveHistoryEntry, savePreset } from "../../core/storage";
 import type {
   ActiveFormContext,
   ActiveFormLookup,
@@ -14,20 +14,24 @@ import type {
   GridValue,
   MessageResponse,
   Profile,
+  FormHistoryEntry,
 } from "../../core/types";
 
 type PopupState = {
   activeForm: ActiveFormContext | null;
   profiles: Profile[];
+  history: FormHistoryEntry[];
   selectedProfileId: string | null;
   values: Record<string, FieldValue>;
   mappings: Record<string, string>;
   unmappedFieldIds: Set<string>;
+  excludedFieldIds: Set<string>;
   autoBrokenMappings: Map<string, string>;
   dirtyFieldIds: Set<string>;
   clearedFieldIds: Set<string>;
   suppressedMappingFieldIds: Set<string>;
   preset: FormPreset | null;
+  skippedFillFieldIds: string[];
   autoLoadMatchingProfile: boolean;
   confirmBeforeFill: boolean;
 };
@@ -35,15 +39,18 @@ type PopupState = {
 const state: PopupState = {
   activeForm: null,
   profiles: [],
+  history: [],
   selectedProfileId: null,
   values: {},
   mappings: {},
   unmappedFieldIds: new Set<string>(),
+  excludedFieldIds: new Set<string>(),
   autoBrokenMappings: new Map<string, string>(),
   dirtyFieldIds: new Set<string>(),
   clearedFieldIds: new Set<string>(),
   suppressedMappingFieldIds: new Set<string>(),
   preset: null,
+  skippedFillFieldIds: [],
   autoLoadMatchingProfile: true,
   confirmBeforeFill: true,
 };
@@ -96,6 +103,14 @@ function normalizeSelectedProfileId(profileId: string | null): string | null {
   return state.profiles.some((profile) => profile.id === profileId) ? profileId : null;
 }
 
+function getRankedProfileSuggestions(): ReturnType<typeof rankProfilesForFields> {
+  return state.activeForm ? rankProfilesForFields(state.activeForm.fields, state.profiles, state.history, state.activeForm.formKey) : [];
+}
+
+function getSuggestedProfileId(): string | null {
+  return getRankedProfileSuggestions()[0]?.profile.id ?? null;
+}
+
 function setInvalidPageState(title: string, message: string): void {
   state.activeForm = null;
   formTitle.textContent = "Google Form Required";
@@ -135,10 +150,13 @@ function renderProfileSelect(): void {
   emptyOption.textContent = "No profile";
   profileSelect.append(emptyOption);
 
+  const suggestions = new Map(getRankedProfileSuggestions().map((entry, index) => [entry.profile.id, index]));
+
   for (const profile of state.profiles) {
     const option = document.createElement("option");
     option.value = profile.id;
-    option.textContent = profile.name;
+    const suggestionIndex = suggestions.get(profile.id);
+    option.textContent = suggestionIndex === 0 ? `${profile.name} • suggested` : profile.name;
     if (profile.id === state.selectedProfileId) {
       option.selected = true;
     }
@@ -203,6 +221,7 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
 
   state.values[fieldId] = value;
   state.clearedFieldIds.delete(fieldId);
+  state.skippedFillFieldIds = state.skippedFillFieldIds.filter((candidate) => candidate !== fieldId);
   if (shouldMarkDirty) {
     state.dirtyFieldIds.add(fieldId);
   } else {
@@ -253,6 +272,109 @@ function isGridValue(value: FieldValue | Profile["values"][string]): value is Gr
 
 function clearDirtyField(fieldId: string): void {
   state.dirtyFieldIds.delete(fieldId);
+}
+
+function getFieldTextSubtype(field: DetectedField): "text" | "email" | "number" | "tel" | "url" {
+  if (field.textSubtype) {
+    return field.textSubtype;
+  }
+
+  const normalizedLabel = field.normalizedLabel;
+  if (normalizedLabel.includes("email")) {
+    return "email";
+  }
+  if (
+    normalizedLabel.includes("url") ||
+    normalizedLabel.includes("website") ||
+    normalizedLabel.includes("web site") ||
+    normalizedLabel.includes("portfolio") ||
+    normalizedLabel.includes("link")
+  ) {
+    return "url";
+  }
+  if (normalizedLabel.includes("phone") || normalizedLabel.includes("mobile") || normalizedLabel.includes("contact")) {
+    return "tel";
+  }
+  if (normalizedLabel.includes("number") || normalizedLabel.includes("count") || normalizedLabel.includes("age")) {
+    return "number";
+  }
+
+  return "text";
+}
+
+function getFieldSectionIdentifier(field: DetectedField): string {
+  return field.sectionTitle ? normalizeText(field.sectionTitle).replace(/\s+/g, "_") : "form_overview";
+}
+
+function getNamedSectionCount(fields: DetectedField[]): number {
+  return new Set(
+    fields
+      .map((field) => field.sectionTitle?.trim())
+      .filter((title): title is string => Boolean(title))
+      .map((title) => normalizeText(title)),
+  ).size;
+}
+
+function getFieldValidationMessage(field: DetectedField, value: FieldValue | undefined): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (field.type === "date" && typeof value === "string" && !isValidDateValue(value)) {
+    return "Use YYYY-MM-DD for this date field.";
+  }
+
+  if (field.type === "time" && typeof value === "string" && !isValidTimeValue(value)) {
+    return "Use 24-hour HH:MM for this time field.";
+  }
+
+  if (field.type === "text" || field.type === "textarea") {
+    if (typeof value !== "string" && typeof value !== "number") {
+      return "This value does not match the expected input format.";
+    }
+
+    const textValue = String(value).trim();
+    if (!textValue) {
+      return null;
+    }
+
+    switch (getFieldTextSubtype(field)) {
+      case "email":
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(textValue) ? null : "Enter a valid email address.";
+      case "number":
+        return Number.isFinite(Number(textValue)) ? null : "Enter a valid number.";
+      case "tel":
+        return /^[+\d][\d\s().-]{5,}$/.test(textValue) ? null : "Enter a valid phone number.";
+      case "url":
+        try {
+          new URL(textValue);
+          return null;
+        } catch {
+          return "Enter a valid URL.";
+        }
+      default:
+        return null;
+    }
+  }
+
+  return null;
+}
+
+function getFieldReviewState(field: DetectedField): {
+  include: boolean;
+  hasValue: boolean;
+  requiredEmpty: boolean;
+  invalidMessage: string | null;
+  cleared: boolean;
+} {
+  const value = coerceFieldValueForField(field, state.values[field.id]);
+  const include = !state.excludedFieldIds.has(field.id);
+  const hasValue = value === null ? false : hasPersistableFieldValue(value);
+  const requiredEmpty = include && field.required && !hasValue;
+  const invalidMessage = include ? getFieldValidationMessage(field, value) : null;
+  const cleared = state.clearedFieldIds.has(field.id) || (field.type === "dropdown" && state.values[field.id] === null);
+
+  return { include, hasValue, requiredEmpty, invalidMessage, cleared };
 }
 
 function hasPersistableFieldValue(value: FieldValue | undefined): boolean {
@@ -650,6 +772,7 @@ function buildFillValues(): Record<string, FieldValue> {
 
   return Object.fromEntries(
     state.activeForm.fields
+      .filter((field) => !state.excludedFieldIds.has(field.id))
       .map((field) => {
         if (field.type === "dropdown" && hasStoredFieldValue(state.values, field.id) && state.values[field.id] === null) {
           return [field.id, null] as const;
@@ -760,7 +883,27 @@ function buildPresetPayload(): FormPreset | null {
 
   const hasValues = Object.keys(values).length > 0;
   const normalizedUnmappedFieldIds = Array.from(persistedUnmappedFieldIds).filter((fieldId) => activeFieldIds.has(fieldId));
-  const hasMappings = Object.keys(persistedMappings).length > 0 || normalizedUnmappedFieldIds.length > 0;
+  const normalizedExcludedFieldIds = Array.from(state.excludedFieldIds).filter((fieldId) => activeFieldIds.has(fieldId));
+  const sections = Array.from(
+    state.activeForm.fields.reduce<Map<string, { id: string; title: string; fieldIds: string[] }>>((map, field) => {
+      if (!field.sectionTitle?.trim()) {
+        return map;
+      }
+
+      const key = getFieldSectionIdentifier(field);
+      const title = field.sectionTitle;
+      const current = map.get(key) ?? { id: key, title, fieldIds: [] };
+      current.fieldIds.push(field.id);
+      map.set(key, current);
+      return map;
+    }, new Map()).values(),
+  ).map((section) => ({
+    ...section,
+    updatedAt: Date.now(),
+  }));
+
+  const hasMappings =
+    Object.keys(persistedMappings).length > 0 || normalizedUnmappedFieldIds.length > 0 || normalizedExcludedFieldIds.length > 0;
   if (!hasValues && !hasMappings) {
     return null;
   }
@@ -776,6 +919,8 @@ function buildPresetPayload(): FormPreset | null {
     values: structuredClone(values),
     mappings: persistedMappings,
     ...(normalizedUnmappedFieldIds.length ? { unmappedFieldIds: normalizedUnmappedFieldIds } : {}),
+    ...(normalizedExcludedFieldIds.length ? { excludedFieldIds: normalizedExcludedFieldIds } : {}),
+    ...(sections.length ? { sections } : {}),
     mappingSchemaVersion: 2,
     createdAt: state.preset?.createdAt ?? now,
     updatedAt: now,
@@ -1258,83 +1403,178 @@ function renderFields(): void {
 
   const profile = getSelectedProfile();
 
-  for (const field of state.activeForm.fields) {
-    const card = document.createElement("article");
-    card.className = "field-card";
-    card.dataset.fieldId = field.id;
+  const sections = state.activeForm.fields.reduce<Map<string, DetectedField[]>>((map, field) => {
+    const key = getFieldSectionIdentifier(field);
+    const existing = map.get(key) ?? [];
+    existing.push(field);
+    map.set(key, existing);
+    return map;
+  }, new Map());
 
-    const header = document.createElement("div");
-    header.className = "field-head";
+  for (const [sectionKey, fields] of sections) {
+    const section = document.createElement("section");
+    section.className = "field-section";
+    section.dataset.sectionKey = sectionKey;
 
-    const label = document.createElement("p");
-    label.className = "field-label";
+    const sectionHeading = fields[0]?.sectionTitle?.trim();
+    const shouldRenderSectionHeading =
+      Boolean(sectionHeading) &&
+      normalizeText(sectionHeading ?? "") !== normalizeText(state.activeForm.title) &&
+      !(sectionKey === "form_overview");
 
-    const labelText = document.createElement("span");
-    labelText.textContent = field.label;
-    label.append(labelText);
-
-    if (field.required) {
-      const requiredMark = document.createElement("span");
-      requiredMark.className = "field-required-mark";
-      requiredMark.textContent = " *";
-      label.append(requiredMark);
+    if (shouldRenderSectionHeading && sectionHeading) {
+      const sectionHead = document.createElement("div");
+      sectionHead.className = "field-section-head";
+      const sectionTitle = document.createElement("p");
+      sectionTitle.className = "field-section-title";
+      sectionTitle.textContent = sectionHeading;
+      const sectionMeta = document.createElement("p");
+      sectionMeta.className = "field-section-meta";
+      sectionMeta.textContent = `${fields.length} field${fields.length === 1 ? "" : "s"}`;
+      sectionHead.append(sectionTitle, sectionMeta);
+      section.append(sectionHead);
     }
 
-    header.append(label);
+    for (const field of fields) {
+      const review = getFieldReviewState(field);
+      const card = document.createElement("article");
+      card.className = "field-card";
+      card.dataset.fieldId = field.id;
+      card.dataset.reviewState = !review.include ? "excluded" : review.requiredEmpty || review.invalidMessage ? "warning" : "ready";
 
-    if (field.helpText) {
-      const description = document.createElement("p");
-      description.className = "field-description";
-      description.textContent = field.helpText;
-      header.append(description);
-    }
+      const header = document.createElement("div");
+      header.className = "field-head";
 
-    const body = document.createElement("div");
-    body.className = "field-body";
-    body.append(createValueControl(field, state.values[field.id] ?? null));
+      const topLine = document.createElement("div");
+      topLine.className = "field-topline";
 
-    if (profile && isPopupEditableField(field)) {
-      const compatibleProfileKeys = Object.keys(profile.values).filter((key) =>
-        coerceFieldValueForField(field, profile.values[key]) !== undefined,
-      );
-      if (compatibleProfileKeys.length === 0 && !state.mappings[field.id]) {
-        card.append(header, body);
-        fieldsContainer.append(card);
-        continue;
+      const label = document.createElement("p");
+      label.className = "field-label";
+
+      const labelText = document.createElement("span");
+      labelText.textContent = field.label;
+      label.append(labelText);
+
+      if (field.required) {
+        const requiredMark = document.createElement("span");
+        requiredMark.className = "field-required-mark";
+        requiredMark.textContent = " *";
+        label.append(requiredMark);
       }
 
-      const mappingRow = document.createElement("label");
-      mappingRow.className = "mapping-row";
-
-      const mappingLabel = document.createElement("span");
-      mappingLabel.textContent = "Mapped profile key";
-
-      const mappingSelect = document.createElement("select");
-      const noneOption = document.createElement("option");
-      noneOption.value = "";
-      noneOption.textContent = "No mapping";
-      noneOption.selected = state.unmappedFieldIds.has(field.id) || !state.mappings[field.id];
-      mappingSelect.append(noneOption);
-
-      for (const key of compatibleProfileKeys) {
-        const option = document.createElement("option");
-        option.value = key;
-        option.textContent = key;
-        option.selected = state.mappings[field.id] === key;
-        mappingSelect.append(option);
-      }
-
-      mappingSelect.addEventListener("change", () => {
-        updateFieldMapping(field.id, mappingSelect.value);
+      const includeButton = document.createElement("button");
+      includeButton.type = "button";
+      includeButton.className = "field-toggle";
+      includeButton.textContent = review.include ? "Included" : "Excluded";
+      includeButton.setAttribute("aria-pressed", review.include ? "true" : "false");
+      includeButton.addEventListener("click", () => {
+        if (!review.include) {
+          state.excludedFieldIds.delete(field.id);
+        } else {
+          state.excludedFieldIds.add(field.id);
+        }
+        state.skippedFillFieldIds = state.skippedFillFieldIds.filter((fieldId) => fieldId !== field.id);
+        schedulePresetSave();
         renderFields();
       });
 
-      mappingRow.append(mappingLabel, mappingSelect);
-      body.append(mappingRow);
+      topLine.append(label, includeButton);
+      header.append(topLine);
+
+      if (field.helpText) {
+        const description = document.createElement("p");
+        description.className = "field-description";
+        description.textContent = field.helpText;
+        header.append(description);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "field-meta";
+      if (field.required) {
+        const requiredBadge = document.createElement("span");
+        requiredBadge.className = "badge required";
+        requiredBadge.textContent = "Required";
+        meta.append(requiredBadge);
+      }
+      if (!review.include) {
+        const excludedBadge = document.createElement("span");
+        excludedBadge.className = "badge muted";
+        excludedBadge.textContent = "Excluded";
+        meta.append(excludedBadge);
+      }
+      if (review.requiredEmpty) {
+        const reviewBadge = document.createElement("span");
+        reviewBadge.className = "badge warning";
+        reviewBadge.textContent = "Needs value";
+        meta.append(reviewBadge);
+      }
+      if (review.invalidMessage) {
+        const invalidBadge = document.createElement("span");
+        invalidBadge.className = "badge warning";
+        invalidBadge.textContent = review.invalidMessage;
+        meta.append(invalidBadge);
+      }
+      if (state.skippedFillFieldIds.includes(field.id)) {
+        const skippedBadge = document.createElement("span");
+        skippedBadge.className = "badge warning";
+        skippedBadge.textContent = "Skipped on last fill";
+        meta.append(skippedBadge);
+      }
+      if (state.mappings[field.id]) {
+        const mappedBadge = document.createElement("span");
+        mappedBadge.className = "badge";
+        mappedBadge.textContent = `Mapped: ${state.mappings[field.id]}`;
+        meta.append(mappedBadge);
+      }
+      if (meta.childElementCount > 0) {
+        header.append(meta);
+      }
+
+      const body = document.createElement("div");
+      body.className = "field-body";
+      body.append(createValueControl(field, state.values[field.id] ?? null));
+
+      if (profile && isPopupEditableField(field)) {
+        const compatibleProfileKeys = Object.keys(profile.values).filter((key) =>
+          coerceFieldValueForField(field, profile.values[key]) !== undefined,
+        );
+        if (compatibleProfileKeys.length > 0 || state.mappings[field.id]) {
+          const mappingRow = document.createElement("label");
+          mappingRow.className = "mapping-row";
+
+          const mappingLabel = document.createElement("span");
+          mappingLabel.textContent = "Mapped profile key";
+
+          const mappingSelect = document.createElement("select");
+          const noneOption = document.createElement("option");
+          noneOption.value = "";
+          noneOption.textContent = "No mapping";
+          noneOption.selected = state.unmappedFieldIds.has(field.id) || !state.mappings[field.id];
+          mappingSelect.append(noneOption);
+
+          for (const key of compatibleProfileKeys) {
+            const option = document.createElement("option");
+            option.value = key;
+            option.textContent = key;
+            option.selected = state.mappings[field.id] === key;
+            mappingSelect.append(option);
+          }
+
+          mappingSelect.addEventListener("change", () => {
+            updateFieldMapping(field.id, mappingSelect.value);
+            renderFields();
+          });
+
+          mappingRow.append(mappingLabel, mappingSelect);
+          body.append(mappingRow);
+        }
+      }
+
+      card.append(header, body);
+      section.append(card);
     }
 
-    card.append(header, body);
-    fieldsContainer.append(card);
+    fieldsContainer.append(section);
   }
 
   fieldsContainer.scrollTop = previousScrollTop;
@@ -1355,6 +1595,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
   const presetValues = state.preset?.values ?? {};
   const presetMappings = state.preset?.mappings ?? {};
   const presetUnmappedFieldIds = new Set(state.preset?.unmappedFieldIds ?? []);
+  state.excludedFieldIds = new Set(state.preset?.excludedFieldIds ?? state.excludedFieldIds);
   const nextValues: Record<string, FieldValue> = {};
   const nextMappings: Record<string, string> = {};
   const nextUnmappedFieldIds = new Set<string>();
@@ -1422,6 +1663,7 @@ function applyProfile(profileId: string | null, autosave = true): void {
   state.mappings = nextMappings;
   state.unmappedFieldIds = nextUnmappedFieldIds;
   state.autoBrokenMappings = nextAutoBrokenMappings;
+  state.skippedFillFieldIds = [];
   renderProfileSelect();
   renderPresetActions();
   renderFields();
@@ -1431,13 +1673,15 @@ function applyProfile(profileId: string | null, autosave = true): void {
 }
 
 async function loadPopup(): Promise<void> {
-  const [profiles, settings, lookup] = await Promise.all([
+  const [profiles, settings, history, lookup] = await Promise.all([
     getProfiles(),
     getSettings(),
+    getFormHistory(),
     sendBackgroundMessage<ActiveFormLookup>({ type: "GET_ACTIVE_FORM_CONTEXT" }),
   ]);
 
   state.profiles = profiles;
+  state.history = history;
   state.autoLoadMatchingProfile = settings.autoLoadMatchingProfile;
   state.confirmBeforeFill = settings.confirmBeforeFill;
   state.activeForm = lookup.context ?? null;
@@ -1455,11 +1699,14 @@ async function loadPopup(): Promise<void> {
     if (lookup.status === "unsupported_only" && lookup.context) {
       setReadyState();
       state.preset = await getPresetByFormKey(lookup.context.formKey);
-      state.selectedProfileId = normalizeSelectedProfileId(
-        settings.autoLoadMatchingProfile ? settings.defaultProfileId : null,
-      );
+      const suggestedProfileId = settings.autoLoadMatchingProfile ? getSuggestedProfileId() : null;
+      state.selectedProfileId = normalizeSelectedProfileId(suggestedProfileId ?? settings.defaultProfileId);
       formTitle.textContent = lookup.context.title;
-      formMeta.textContent = `${lookup.context.fields.length} detected field${lookup.context.fields.length === 1 ? "" : "s"}`;
+      const sectionCount = getNamedSectionCount(lookup.context.fields);
+      formMeta.textContent =
+        sectionCount > 0
+          ? `${lookup.context.fields.length} detected field${lookup.context.fields.length === 1 ? "" : "s"} across ${sectionCount} section${sectionCount === 1 ? "" : "s"}`
+          : `${lookup.context.fields.length} detected field${lookup.context.fields.length === 1 ? "" : "s"}`;
       fieldsContainer.classList.remove("hidden");
       profileControls.classList.remove("hidden");
       renderProfileSelect();
@@ -1479,13 +1726,17 @@ async function loadPopup(): Promise<void> {
 
   const preset = await getPresetByFormKey(activeForm.formKey);
   state.preset = preset;
+  state.excludedFieldIds = new Set(preset?.excludedFieldIds ?? []);
 
-  state.selectedProfileId = normalizeSelectedProfileId(
-    settings.autoLoadMatchingProfile ? settings.defaultProfileId : null,
-  );
+  const suggestedProfileId = settings.autoLoadMatchingProfile ? getSuggestedProfileId() : null;
+  state.selectedProfileId = normalizeSelectedProfileId(suggestedProfileId ?? settings.defaultProfileId);
 
   formTitle.textContent = activeForm.title;
-  formMeta.textContent = `${activeForm.fields.length} detected field${activeForm.fields.length === 1 ? "" : "s"}`;
+  const sectionCount = getNamedSectionCount(activeForm.fields);
+  formMeta.textContent =
+    sectionCount > 0
+      ? `${activeForm.fields.length} detected field${activeForm.fields.length === 1 ? "" : "s"} across ${sectionCount} section${sectionCount === 1 ? "" : "s"}`
+      : `${activeForm.fields.length} detected field${activeForm.fields.length === 1 ? "" : "s"}`;
   fieldsContainer.classList.remove("hidden");
   profileControls.classList.remove("hidden");
 
@@ -1520,6 +1771,7 @@ async function handleFill(): Promise<void> {
       fields: state.activeForm.fields,
     },
   });
+  state.skippedFillFieldIds = [...result.skippedFieldIds];
 
   const skippedLabels = result.skippedFieldIds.map(getFieldDisplayLabel);
   const skippedTypes = result.skippedFieldIds.map(getFieldType);
@@ -1532,6 +1784,18 @@ async function handleFill(): Promise<void> {
       : "";
 
   if (skippedAreOnlyDropdowns) {
+    renderFields();
+    await saveHistoryEntry({
+      id: crypto.randomUUID(),
+      formKey: state.activeForm.formKey,
+      formTitle: state.activeForm.title,
+      formUrl: state.activeForm.url,
+      lastUsedProfileId: state.selectedProfileId,
+      lastUsedProfileName: getSelectedProfile()?.name ?? null,
+      lastFilledAt: Date.now(),
+      filledFieldCount: result.filledFieldIds.length,
+      skippedFieldCount: result.skippedFieldIds.length,
+    });
     setStatus(
       result.filledFieldIds.length > 0
         ? `Filled ${result.filledFieldIds.length} field(s). Review dropdown selections on the form before submitting.`
@@ -1540,6 +1804,19 @@ async function handleFill(): Promise<void> {
     );
     return;
   }
+
+  renderFields();
+  await saveHistoryEntry({
+    id: crypto.randomUUID(),
+    formKey: state.activeForm.formKey,
+    formTitle: state.activeForm.title,
+    formUrl: state.activeForm.url,
+    lastUsedProfileId: state.selectedProfileId,
+    lastUsedProfileName: getSelectedProfile()?.name ?? null,
+    lastFilledAt: Date.now(),
+    filledFieldCount: result.filledFieldIds.length,
+    skippedFieldCount: result.skippedFieldIds.length,
+  });
 
   setStatus(
     result.skippedFieldIds.length
@@ -1591,9 +1868,11 @@ function handleClear(): void {
   state.values = {};
   state.mappings = {};
   state.unmappedFieldIds.clear();
+  state.excludedFieldIds.clear();
   state.autoBrokenMappings.clear();
   state.preset = persistedPresetSnapshot;
   state.dirtyFieldIds.clear();
+  state.skippedFillFieldIds = [];
   renderPresetActions();
   renderFields();
   setStatus("Cleared current popup values and mappings.", "idle");
@@ -1628,10 +1907,12 @@ async function handleResetPreset(): Promise<void> {
   state.values = {};
   state.mappings = {};
   state.unmappedFieldIds.clear();
+  state.excludedFieldIds.clear();
   state.autoBrokenMappings.clear();
   state.dirtyFieldIds.clear();
   state.clearedFieldIds.clear();
   state.suppressedMappingFieldIds.clear();
+  state.skippedFillFieldIds = [];
   applyProfile(state.selectedProfileId, false);
   renderPresetActions();
   setStatus("Reset the saved preset for this form.", "success");
@@ -1663,6 +1944,26 @@ openOptionsButton.addEventListener("click", () => {
 
 window.addEventListener("pagehide", () => {
   void flushPendingPresetSave().catch(() => undefined);
+});
+
+window.addEventListener("keydown", (event) => {
+  const target = event.target as HTMLElement | null;
+  const isEditableTarget =
+    target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+
+  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    event.preventDefault();
+    void handleFill().catch((error) => {
+      setStatus(error instanceof Error ? error.message : "Unable to fill the current form.", "error");
+    });
+    return;
+  }
+
+  if (event.key === "/" && !isEditableTarget) {
+    event.preventDefault();
+    const firstFieldControl = fieldsContainer.querySelector<HTMLElement>("input, textarea, select");
+    firstFieldControl?.focus();
+  }
 });
 
 if (!hasChromeRuntime()) {

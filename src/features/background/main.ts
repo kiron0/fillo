@@ -1,17 +1,20 @@
 import { scriptingExecuteScript, tabsQuery, tabsSendMessage } from "../../core/chrome-api";
+import { CONTENT_SCRIPT_VERSION } from "../../core/content-script-version";
 import {
   clearAllDataDirect,
+  clearHistoryDirect,
   deletePresetDirect,
   deleteProfileDirect,
   importAppDataDirect,
+  saveHistoryEntryDirect,
   savePresetDirect,
   saveProfileDirect,
   saveSettingsDirect,
 } from "../../core/storage-ops";
 import type { ActiveFormLookup, BackgroundRequest, ContentRequest, FillResult, MessageResponse, ScanResult } from "../../core/types";
 
-const SCAN_RETRY_ATTEMPTS = 8;
-const SCAN_RETRY_DELAY_MS = 300;
+const SCAN_RETRY_ATTEMPTS = 20;
+const SCAN_RETRY_DELAY_MS = 400;
 let storageMutationQueue: Promise<void> = Promise.resolve();
 
 async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
@@ -60,13 +63,26 @@ function sleep(ms: number): Promise<void> {
 
 async function ensureContentScript(tabId: number): Promise<void> {
   try {
-    await sendToTab(tabId, { type: "PING" });
-    return;
-  } catch {
-    await scriptingExecuteScript({
-      target: { tabId },
-      files: ["content/index.js"],
-    });
+    const ping = await sendToTab<{ ready: boolean; version?: string }>(tabId, { type: "PING" });
+    if (ping?.ready && ping.version === CONTENT_SCRIPT_VERSION) {
+      return;
+    }
+
+    throw new Error("Reload the Google Form tab to use the latest extension code, then open Fillo again.");
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("latest extension code")) {
+      throw error;
+    }
+
+    try {
+      await scriptingExecuteScript({
+        target: { tabId },
+        files: ["content/index.js"],
+      });
+      return;
+    } catch {
+      throw new Error("Reload the Google Form tab to use the latest extension code, then open Fillo again.");
+    }
   }
 }
 
@@ -203,6 +219,12 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
                 return;
               case "delete_preset":
                 await deletePresetDirect(message.payload.presetId);
+                return;
+              case "save_history_entry":
+                await saveHistoryEntryDirect(message.payload.entry);
+                return;
+              case "clear_history":
+                await clearHistoryDirect();
                 return;
               case "save_settings":
                 await saveSettingsDirect(message.payload.settings);

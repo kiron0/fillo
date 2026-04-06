@@ -1,10 +1,17 @@
-import type { DetectedField, FieldValue, Profile } from "./types";
+import type { DetectedField, FieldValue, FormHistoryEntry, Profile } from "./types";
 import { normalizeText, profileKeyCandidates, tokenize } from "./normalization";
 
 export interface MatchedFieldValue {
   value: FieldValue;
   profileKey: string | null;
   score: number;
+}
+
+export interface RankedProfileSuggestion {
+  profile: Profile;
+  score: number;
+  matchedFieldCount: number;
+  historyBoost: number;
 }
 
 function scoreTokens(left: string, right: string): number {
@@ -34,7 +41,7 @@ export function suggestProfileKey(field: DetectedField, profile: Profile | null)
   let bestScore = 0;
 
   for (const key of Object.keys(profile.values)) {
-    const candidates = profileKeyCandidates(key);
+    const candidates = getProfileCandidates(profile, key);
 
     for (const candidate of candidates) {
       if (candidate === label) {
@@ -50,6 +57,71 @@ export function suggestProfileKey(field: DetectedField, profile: Profile | null)
   }
 
   return bestScore >= 0.45 ? bestKey : null;
+}
+
+function getProfileCandidates(profile: Profile, key: string): string[] {
+  const aliases = profile.aliases?.[key] ?? [];
+  return [...profileKeyCandidates(key), ...aliases.map(normalizeText)].filter(Boolean);
+}
+
+export function rankProfilesForFields(
+  fields: DetectedField[],
+  profiles: Profile[],
+  history: FormHistoryEntry[],
+  formKey?: string,
+): RankedProfileSuggestion[] {
+  const matchingHistory = formKey ? history.filter((entry) => entry.formKey === formKey) : [];
+
+  return profiles
+    .map((profile) => {
+      let matchedFieldCount = 0;
+      let totalScore = 0;
+
+      for (const field of fields) {
+        let bestFieldScore = 0;
+        for (const key of Object.keys(profile.values)) {
+          for (const candidate of getProfileCandidates(profile, key)) {
+            if (candidate === field.normalizedLabel) {
+              bestFieldScore = 1;
+              break;
+            }
+
+            bestFieldScore = Math.max(bestFieldScore, scoreTokens(field.normalizedLabel, candidate));
+          }
+
+          if (bestFieldScore === 1) {
+            break;
+          }
+        }
+
+        if (bestFieldScore >= 0.45) {
+          matchedFieldCount += 1;
+          totalScore += bestFieldScore;
+        }
+      }
+
+      const historyEntry = matchingHistory.find((entry) => entry.lastUsedProfileId === profile.id);
+      const historyBoost = historyEntry ? 1 + Math.min(1, matchedFieldCount / Math.max(fields.length, 1)) : 0;
+
+      return {
+        profile,
+        matchedFieldCount,
+        historyBoost,
+        score: totalScore + historyBoost,
+      };
+    })
+    .filter((entry) => entry.matchedFieldCount > 0 || entry.historyBoost > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+
+      if (right.matchedFieldCount !== left.matchedFieldCount) {
+        return right.matchedFieldCount - left.matchedFieldCount;
+      }
+
+      return right.profile.updatedAt - left.profile.updatedAt;
+    });
 }
 
 export function buildInitialFieldValues(

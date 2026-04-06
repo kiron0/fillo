@@ -1,0 +1,1 @@
+export const CONTENT_SCRIPT_VERSION = "2026-04-06-4";

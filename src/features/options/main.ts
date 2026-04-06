@@ -1,9 +1,11 @@
 import { hasChromeRuntime } from "../../core/chrome-api";
 import {
   clearAllData,
+  clearHistory,
   deletePreset,
   deleteProfile,
   exportAppData,
+  getFormHistory,
   getPresets,
   getProfiles,
   getSettings,
@@ -13,7 +15,8 @@ import {
   saveSettings,
 } from "../../core/storage";
 import { validateImportedAppData } from "../../core/storage-ops";
-import type { AppSettings, FormPreset, ImportedAppData, Profile } from "../../core/types";
+import { DEFAULT_EXPORT_SELECTION } from "../../core/types";
+import type { AppSettings, ExportSelection, FormHistoryEntry, FormPreset, ImportedAppData, Profile } from "../../core/types";
 
 const statusNode = document.querySelector<HTMLParagraphElement>("#status")!;
 const defaultProfileSelect = document.querySelector<HTMLSelectElement>("#default-profile")!;
@@ -23,19 +26,32 @@ const showBackupSectionCheckbox = document.querySelector<HTMLInputElement>("#sho
 const addProfileButton = document.querySelector<HTMLButtonElement>("#add-profile")!;
 const profilesContainer = document.querySelector<HTMLDivElement>("#profiles")!;
 const presetsContainer = document.querySelector<HTMLDivElement>("#presets")!;
+const historyContainer = document.querySelector<HTMLDivElement>("#history");
 const backupSection = document.querySelector<HTMLDivElement>("#backup-section")!;
 const exportButton = document.querySelector<HTMLButtonElement>("#export-data")!;
 const importButton = document.querySelector<HTMLButtonElement>("#import-data")!;
 const clearDataButton = document.querySelector<HTMLButtonElement>("#clear-data")!;
+const clearHistoryButton = document.querySelector<HTMLButtonElement>("#clear-history");
 const backupPayload = document.querySelector<HTMLTextAreaElement>("#backup-payload")!;
+const storageSummary = document.querySelector<HTMLDivElement>("#storage-summary");
+const exportProfilesCheckbox = document.querySelector<HTMLInputElement>("#export-profiles");
+const exportPresetsCheckbox = document.querySelector<HTMLInputElement>("#export-presets");
+const exportSettingsCheckbox = document.querySelector<HTMLInputElement>("#export-settings");
+const exportHistoryCheckbox = document.querySelector<HTMLInputElement>("#export-history");
+const importProfilesCheckbox = document.querySelector<HTMLInputElement>("#import-profiles");
+const importPresetsCheckbox = document.querySelector<HTMLInputElement>("#import-presets");
+const importSettingsCheckbox = document.querySelector<HTMLInputElement>("#import-settings");
+const importHistoryCheckbox = document.querySelector<HTMLInputElement>("#import-history");
 
 const state: {
   profiles: Profile[];
   presets: FormPreset[];
+  history: FormHistoryEntry[];
   settings: AppSettings;
 } = {
   profiles: [],
   presets: [],
+  history: [],
   settings: {
     defaultProfileId: null,
     autoLoadMatchingProfile: true,
@@ -69,6 +85,24 @@ function restoreSettingsControls(settings: AppSettings): void {
   backupSection.classList.toggle("hidden", !settings.showBackupSection);
 }
 
+function readExportSelectionControls(): ExportSelection {
+  return {
+    profiles: exportProfilesCheckbox?.checked ?? DEFAULT_EXPORT_SELECTION.profiles,
+    presets: exportPresetsCheckbox?.checked ?? DEFAULT_EXPORT_SELECTION.presets,
+    settings: exportSettingsCheckbox?.checked ?? DEFAULT_EXPORT_SELECTION.settings,
+    history: exportHistoryCheckbox?.checked ?? DEFAULT_EXPORT_SELECTION.history,
+  };
+}
+
+function readImportSelectionControls(): ExportSelection {
+  return {
+    profiles: importProfilesCheckbox?.checked ?? DEFAULT_EXPORT_SELECTION.profiles,
+    presets: importPresetsCheckbox?.checked ?? DEFAULT_EXPORT_SELECTION.presets,
+    settings: importSettingsCheckbox?.checked ?? DEFAULT_EXPORT_SELECTION.settings,
+    history: importHistoryCheckbox?.checked ?? DEFAULT_EXPORT_SELECTION.history,
+  };
+}
+
 function getProfileValueKind(value: string | number | boolean | string[]): "string" | "number" | "boolean" | "array" {
   if (Array.isArray(value)) {
     return "array";
@@ -98,6 +132,10 @@ function createEmptyProfile(): Profile {
       fullName: "",
       email: "",
     },
+    aliases: {
+      fullName: ["name", "applicant name"],
+      email: ["email address"],
+    },
     createdAt: now,
     updatedAt: now,
   };
@@ -120,7 +158,12 @@ function renderDefaultProfileOptions(): void {
   }
 }
 
-function createProfileValueRow(key: string, value: string | number | boolean | string[], onDelete: () => void): HTMLElement {
+function createProfileValueRow(
+  key: string,
+  value: string | number | boolean | string[],
+  aliases: string[],
+  onDelete: () => void,
+): HTMLElement {
   const row = document.createElement("div");
   row.className = "value-row";
 
@@ -147,14 +190,19 @@ function createProfileValueRow(key: string, value: string | number | boolean | s
   const valueInput = document.createElement("input");
   valueInput.value = Array.isArray(value) ? value.join(", ") : String(value);
 
+  const aliasInput = document.createElement("input");
+  aliasInput.value = aliases.join(", ");
+  aliasInput.placeholder = "Aliases";
+
   const removeButton = document.createElement("button");
   removeButton.textContent = "Remove";
   removeButton.addEventListener("click", onDelete);
 
-  row.append(keyInput, valueKindSelect, valueInput, removeButton);
+  row.append(keyInput, valueKindSelect, valueInput, aliasInput, removeButton);
   row.dataset.key = key;
   row.dataset.value = valueInput.value;
   row.dataset.valueKind = initialValueKind;
+  row.dataset.aliases = aliasInput.value;
 
   keyInput.addEventListener("input", () => {
     row.dataset.key = keyInput.value;
@@ -162,6 +210,10 @@ function createProfileValueRow(key: string, value: string | number | boolean | s
 
   valueInput.addEventListener("input", () => {
     row.dataset.value = valueInput.value;
+  });
+
+  aliasInput.addEventListener("input", () => {
+    row.dataset.aliases = aliasInput.value;
   });
 
   valueKindSelect.addEventListener("change", () => {
@@ -206,7 +258,8 @@ function updateProfileCardMeta(card: HTMLElement, profile: Profile): void {
     return;
   }
 
-  meta.textContent = `${Object.keys(profile.values).length} saved value${Object.keys(profile.values).length === 1 ? "" : "s"}`;
+  const aliasCount = Object.values(profile.aliases ?? {}).reduce((total, items) => total + items.length, 0);
+  meta.textContent = `${Object.keys(profile.values).length} saved value${Object.keys(profile.values).length === 1 ? "" : "s"}${aliasCount > 0 ? ` | ${aliasCount} alias${aliasCount === 1 ? "" : "es"}` : ""}`;
 }
 
 function createProfileCard(profile: Profile): HTMLElement {
@@ -220,18 +273,19 @@ function createProfileCard(profile: Profile): HTMLElement {
 
   const meta = document.createElement("p");
   meta.className = "profile-meta";
-  meta.textContent = `${Object.keys(profile.values).length} saved value${Object.keys(profile.values).length === 1 ? "" : "s"}`;
+  const aliasCount = Object.values(profile.aliases ?? {}).reduce((total, items) => total + items.length, 0);
+  meta.textContent = `${Object.keys(profile.values).length} saved value${Object.keys(profile.values).length === 1 ? "" : "s"}${aliasCount > 0 ? ` | ${aliasCount} alias${aliasCount === 1 ? "" : "es"}` : ""}`;
 
   const values = document.createElement("div");
   values.className = "profile-values";
 
-  const addValueRow = (key = "", value: string | number | boolean | string[] = ""): void => {
-    const row = createProfileValueRow(key, value, () => row.remove());
+  const addValueRow = (key = "", value: string | number | boolean | string[] = "", aliases: string[] = []): void => {
+    const row = createProfileValueRow(key, value, aliases, () => row.remove());
     values.append(row);
   };
 
   for (const [key, value] of Object.entries(profile.values)) {
-    addValueRow(key, value);
+    addValueRow(key, value, profile.aliases?.[key] ?? []);
   }
 
   const actions = document.createElement("div");
@@ -267,6 +321,7 @@ function createProfileCard(profile: Profile): HTMLElement {
         if (!state.profiles.length) {
           renderProfiles();
         }
+        renderPrivacySummary();
         setStatus(`Deleted profile "${profile.name}".`);
       })
       .catch((error) => {
@@ -327,15 +382,16 @@ function createPresetCard(preset: FormPreset): HTMLElement {
 
   const deleteButton = document.createElement("button");
   deleteButton.textContent = "Delete";
-  deleteButton.addEventListener("click", () => {
-    void deletePreset(preset.id)
-      .then(() => {
-        state.presets = state.presets.filter((item) => item.id !== preset.id);
-        card.remove();
-        if (!state.presets.length) {
-          renderPresets();
-        }
-        setStatus(`Deleted saved form "${preset.name}".`);
+      deleteButton.addEventListener("click", () => {
+        void deletePreset(preset.id)
+          .then(() => {
+            state.presets = state.presets.filter((item) => item.id !== preset.id);
+            card.remove();
+            if (!state.presets.length) {
+              renderPresets();
+            }
+            renderPrivacySummary();
+            setStatus(`Deleted saved form "${preset.name}".`);
       })
       .catch((error) => {
         setStatus(error instanceof Error ? error.message : "Unable to delete saved form.");
@@ -354,6 +410,7 @@ async function persistProfile(card: HTMLElement, profile: Profile): Promise<void
   const nameInput = card.querySelector<HTMLInputElement>('[data-role="profile-name"]')!;
   const rows = Array.from(card.querySelectorAll<HTMLElement>(".value-row"));
   const values: Profile["values"] = {};
+  const aliases: NonNullable<Profile["aliases"]> = {};
 
   for (const row of rows) {
     const key = row.dataset.key?.trim();
@@ -361,12 +418,20 @@ async function persistProfile(card: HTMLElement, profile: Profile): Promise<void
       continue;
     }
     values[key] = parseValue(row.dataset.value ?? "", row.dataset.valueKind);
+    const aliasValues = (row.dataset.aliases ?? "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (aliasValues.length > 0) {
+      aliases[key] = aliasValues;
+    }
   }
 
   const next: Profile = {
     ...profile,
     name: nameInput.value.trim() || profile.name,
     values,
+    aliases,
     updatedAt: Date.now(),
   };
 
@@ -377,10 +442,12 @@ async function persistProfile(card: HTMLElement, profile: Profile): Promise<void
   }
   profile.name = next.name;
   profile.values = next.values;
+  profile.aliases = next.aliases;
   profile.updatedAt = next.updatedAt;
   nameInput.value = next.name;
   updateProfileCardMeta(card, next);
   renderDefaultProfileOptions();
+  renderPrivacySummary();
   setStatus(`Saved profile "${next.name}".`);
 }
 
@@ -416,10 +483,57 @@ function renderPresets(): void {
   }
 }
 
+function renderHistory(): void {
+  historyContainer?.replaceChildren();
+  if (!historyContainer) {
+    return;
+  }
+
+  if (!state.history.length) {
+    const empty = document.createElement("p");
+    empty.className = "preset-meta";
+    empty.textContent = "No fills recorded yet. Recent forms and profile usage will appear here after a fill run.";
+    historyContainer.append(empty);
+    return;
+  }
+
+  for (const entry of state.history) {
+    const card = document.createElement("article");
+    card.className = "card";
+    const title = document.createElement("p");
+    title.className = "history-item-title";
+    title.textContent = entry.formTitle;
+    const meta = document.createElement("p");
+    meta.className = "preset-meta";
+    meta.textContent = `Last used ${new Date(entry.lastFilledAt).toLocaleString()}${entry.lastUsedProfileName ? ` with ${entry.lastUsedProfileName}` : ""} | Filled ${entry.filledFieldCount}, skipped ${entry.skippedFieldCount}`;
+    card.append(title, meta);
+    historyContainer.append(card);
+  }
+}
+
+function renderPrivacySummary(): void {
+  storageSummary?.replaceChildren();
+  if (!storageSummary) {
+    return;
+  }
+
+  for (const line of [
+    `${state.profiles.length} profile${state.profiles.length === 1 ? "" : "s"} stored locally`,
+    `${state.presets.length} saved form${state.presets.length === 1 ? "" : "s"} stored locally`,
+    `${state.history.length} history entr${state.history.length === 1 ? "y" : "ies"} stored locally`,
+  ]) {
+    const item = document.createElement("p");
+    item.className = "preset-meta";
+    item.textContent = line;
+    storageSummary.append(item);
+  }
+}
+
 async function refresh(): Promise<void> {
-  const [profiles, presets, settings] = await Promise.all([getProfiles(), getPresets(), getSettings()]);
+  const [profiles, presets, history, settings] = await Promise.all([getProfiles(), getPresets(), getFormHistory(), getSettings()]);
   state.profiles = profiles;
   state.presets = presets;
+  state.history = history;
   state.settings = settings;
 
   renderDefaultProfileOptions();
@@ -429,6 +543,8 @@ async function refresh(): Promise<void> {
   backupSection.classList.toggle("hidden", !settings.showBackupSection);
   renderProfiles();
   renderPresets();
+  renderHistory();
+  renderPrivacySummary();
 }
 
 function syncBackupSectionVisibility(): void {
@@ -503,13 +619,14 @@ addProfileButton.addEventListener("click", () => {
     } else {
       profilesContainer.append(createProfileCard(profile));
     }
+    renderPrivacySummary();
     setStatus("Added a new profile.");
   }, "Unable to add profile.");
 });
 
 exportButton.addEventListener("click", () => {
   void runTopLevelAction(async () => {
-    backupPayload.value = JSON.stringify(await exportAppData(), null, 2);
+    backupPayload.value = JSON.stringify(await exportAppData(readExportSelectionControls()), null, 2);
     setStatus("Exported local data to the text area.");
   }, "Unable to export local data.");
 });
@@ -528,7 +645,7 @@ importButton.addEventListener("click", () => {
       throw new Error("Import payload must be a valid version 1 backup with well-formed profiles, presets, and settings.");
     }
 
-    await importAppData(payload);
+    await importAppData(payload, readImportSelectionControls());
     await refresh();
     setStatus("Imported local data.");
   }, "Invalid import payload.");
@@ -544,6 +661,14 @@ clearDataButton.addEventListener("click", () => {
     await refresh();
     setStatus("Cleared all local data.");
   }, "Unable to clear local data.");
+});
+
+clearHistoryButton?.addEventListener("click", () => {
+  void runTopLevelAction(async () => {
+    await clearHistory();
+    await refresh();
+    setStatus("Cleared form history.");
+  }, "Unable to clear form history.");
 });
 
 if (!hasChromeRuntime()) {

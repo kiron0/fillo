@@ -58,9 +58,56 @@
         <div id="presets" class="card-list"></div>
       </section>
 
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Form history</h2>
+        </div>
+        <div id="history" class="card-list"></div>
+      </section>
+
       <section id="backup-section" class="panel hidden">
         <div class="panel-head">
           <h2>Backup And Restore</h2>
+        </div>
+        <div class="backup-selectors">
+          <div class="selector-group">
+            <p class="selector-title">Export sections</p>
+            <label class="toggle">
+              <input type="checkbox" id="export-profiles" checked />
+              <span>Profiles</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="export-presets" checked />
+              <span>Saved forms</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="export-settings" checked />
+              <span>Settings</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="export-history" checked />
+              <span>Form history</span>
+            </label>
+          </div>
+          <div class="selector-group">
+            <p class="selector-title">Restore sections</p>
+            <label class="toggle">
+              <input type="checkbox" id="import-profiles" checked />
+              <span>Profiles</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="import-presets" checked />
+              <span>Saved forms</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="import-settings" checked />
+              <span>Settings</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="import-history" checked />
+              <span>Form history</span>
+            </label>
+          </div>
         </div>
         <div class="backup-actions">
           <button id="export-data" class="button">Download backup</button>
@@ -68,6 +115,16 @@
           <button id="clear-data" class="button danger">Clear all saved data</button>
         </div>
         <textarea id="backup-payload" rows="14" spellcheck="false" placeholder="Your backup will appear here. Paste a previous backup here to restore it."></textarea>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Privacy</h2>
+        </div>
+        <div id="storage-summary" class="privacy-panel"></div>
+        <div class="backup-actions">
+          <button id="clear-history" class="button">Clear form history</button>
+        </div>
       </section>
     </main>
 

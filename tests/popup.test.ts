@@ -203,6 +203,7 @@ describe("popup", () => {
     expect(savedPreset.values.full_name).toBe("Manual Name");
   });
 
+
   it("keeps a manual override after reopening when a mapped field is edited", async () => {
     const profiles: Profile[] = [
       {
@@ -4070,5 +4071,98 @@ describe("popup", () => {
       );
       expect(statusCard.dataset.state).toBe("idle");
     });
+  });
+
+  it("does not report a fake section count when the form has no named sections", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+        {
+          id: "email",
+          label: "Email",
+          normalizedLabel: "email",
+          type: "text",
+          required: true,
+          textSubtype: "email",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLParagraphElement>("#form-meta")?.textContent).toBe("2 detected fields");
+  });
+
+  it("flags invalid URL values for website-labeled text fields", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Portfolio",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "portfolio-form",
+      fields: [
+        {
+          id: "website",
+          label: "Website",
+          normalizedLabel: "website",
+          type: "text",
+          required: false,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "portfolio-form",
+      name: "Portfolio",
+      formTitle: "Portfolio",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { website: "not a url" },
+      mappings: {},
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector(".badge.warning")?.textContent).toBe("Enter a valid URL.");
   });
 });

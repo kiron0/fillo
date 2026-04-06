@@ -55,6 +55,29 @@ const nestedChoiceHtml = `
 </html>
 `;
 
+const duplicateLabelDifferentTypesHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Duplicate Labels</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Contact</div>
+      <input type="text" name="contact_text" />
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Contact</div>
+      <select name="contact_select">
+        <option value="">Choose</option>
+        <option value="sales">Sales</option>
+        <option value="support">Support</option>
+      </select>
+    </div>
+  </body>
+</html>
+`;
+
 const radioWithOtherHtml = `
 <!doctype html>
 <html>
@@ -825,6 +848,32 @@ describe("content dom", () => {
       type: "radio",
       options: ["Option A", "Option B"],
     });
+  });
+
+  it("matches duplicate labels by field type when ids change and DOM order shifts", () => {
+    document.documentElement.innerHTML = duplicateLabelDifferentTypesHtml;
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSdupetypes/viewform");
+
+    const listItems = Array.from(document.querySelectorAll<HTMLElement>('[role="listitem"]'));
+    const textItem = listItems[0]!;
+    const dropdownItem = listItems[1]!;
+    (textItem.querySelector('input[name="contact_text"]') as HTMLInputElement).name = "contact_text_new";
+    (dropdownItem.querySelector('select[name="contact_select"]') as HTMLSelectElement).name = "contact_select_new";
+    dropdownItem.parentElement?.insertBefore(dropdownItem, textItem);
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: "Alice",
+        [scan.fields[1]!.id]: "Support",
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id, scan.fields[1]!.id]);
+    expect(fillResult.skippedFieldIds).toEqual([]);
+    expect((document.querySelector('input[name="contact_text_new"]') as HTMLInputElement).value).toBe("Alice");
+    expect((document.querySelector('select[name="contact_select_new"]') as HTMLSelectElement).value).toBe("support");
   });
 
   it("captures bound labels for linear scale questions", () => {
@@ -1938,6 +1987,38 @@ describe("content dom", () => {
     expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("true");
     expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[1]!.getAttribute("aria-checked")).toBe("true");
     expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("false");
+    expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[1]!.getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("does not clear unspecified checkbox grid rows when filling partial values", () => {
+    document.documentElement.innerHTML = checkboxGridHtml;
+    setInteractiveRoleClicks(document);
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSpartialgrid/viewform");
+    const firstRowKey = scan.fields[0]!.gridRowIds?.[0] ?? scan.fields[0]!.gridRows?.[0] ?? "Row 1";
+
+    const gridRows = Array.from(document.querySelectorAll<HTMLElement>('[role="grid"] [role="row"]')).slice(1);
+    gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.click();
+    gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[1]!.click();
+    expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[1]!.getAttribute("aria-checked")).toBe("true");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: {
+          kind: "grid",
+          rows: {
+            [firstRowKey]: ["A"],
+          },
+        },
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("true");
+    expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[1]!.getAttribute("aria-checked")).toBe("false");
+    expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("true");
     expect(gridRows[1]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[1]!.getAttribute("aria-checked")).toBe("true");
   });
 

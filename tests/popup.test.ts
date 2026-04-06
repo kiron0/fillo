@@ -459,6 +459,58 @@ describe("popup", () => {
     expect(document.querySelector<HTMLDivElement>("#status-card")!.classList.contains("hidden")).toBe(true);
   });
 
+  it("shows a neutral status when a saved preset is restored on a ready form", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Saved Name" },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
+    expect(statusCard.textContent).toBe(
+      "Loaded saved preset for this form. Review values before filling.",
+    );
+    expect(statusCard.dataset.state).toBe("idle");
+  });
+
   it("removes a preset when all saved values are cleared back to blank", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",
@@ -688,6 +740,165 @@ describe("popup", () => {
         email: "saved@example.com",
       },
     });
+  });
+
+  it("restores excluded fields from a saved preset on unsupported-only scans", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: {},
+      excludedFieldIds: ["full_name"],
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "unsupported_only",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    expect(document.querySelector<HTMLButtonElement>(".field-toggle")!.textContent).toBe("Excluded");
+  });
+
+  it("shows that a saved preset was loaded on unsupported-only scans", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Saved Name" },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [preset],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "unsupported_only",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
+    expect(statusCard.textContent).toBe(
+      "Loaded saved preset for this form. This form was scanned, but only unsupported field types were detected.",
+    );
+    expect(statusCard.dataset.state).toBe("idle");
   });
 
   it("does not preserve an old saved mapping after Clear when the user explicitly chooses No mapping", async () => {
@@ -951,6 +1162,161 @@ describe("popup", () => {
     profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
 
     expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("email");
+  });
+
+  it("persists mapping choices across autosave while no profile is selected", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: {
+          fullName: "Alice",
+          email: "alice@example.com",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "email";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect((mock.state.presets as FormPreset[])[0]).toMatchObject({
+      mappings: { full_name: "email" },
+      mappingSchemaVersion: 2,
+    });
+
+    document.documentElement.innerHTML = popupHtml;
+    await loadPopupModule();
+
+    const reopenedProfileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    reopenedProfileSelect.value = "profile-1";
+    reopenedProfileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("email");
+  });
+
+  it("persists explicit no-mapping choices across autosave while no profile is selected", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: {
+          fullName: "Alice",
+          email: "alice@example.com",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const preset: FormPreset = {
+      id: "preset-1",
+      formKey: "popup-form",
+      name: "Registration",
+      formTitle: "Registration",
+      formUrl: activeForm.url,
+      fields: activeForm.fields,
+      values: { full_name: "Alice" },
+      mappings: { full_name: "fullName" },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [preset],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect((mock.state.presets as FormPreset[])[0]).toMatchObject({
+      unmappedFieldIds: ["full_name"],
+      mappingSchemaVersion: 2,
+    });
+
+    document.documentElement.innerHTML = popupHtml;
+    await loadPopupModule();
+
+    const reopenedProfileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    reopenedProfileSelect.value = "profile-1";
+    reopenedProfileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("");
   });
 
   it("keeps cleared fields empty when switching profiles in the same popup session", async () => {
@@ -2833,6 +3199,121 @@ describe("popup", () => {
     expect(textarea.placeholder).toBe("Your answer");
   });
 
+  it("renders mapped numeric values for textarea fields", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Profile",
+        values: { essayAnswer: 2025 },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Essay Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "essay-form",
+      fields: [
+        {
+          id: "essay",
+          label: "Essay Answer",
+          normalizedLabel: "essay answer",
+          type: "textarea",
+          required: false,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "profile-1";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const textarea = document.querySelector<HTMLTextAreaElement>("#fields textarea")!;
+    expect(textarea.value).toBe("2025");
+  });
+
+  it("keeps numeric text mappings when the visible value is re-entered as text", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Profile",
+        values: { studentId: 2025 },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Fallback",
+        values: { studentId: 3030 },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "ID Form",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "id-form",
+      fields: [
+        {
+          id: "student_id",
+          label: "Student ID",
+          normalizedLabel: "student id",
+          type: "text",
+          required: false,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    expect(input.value).toBe("2025");
+
+    input.value = "2025";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(document.querySelector<HTMLInputElement>('#fields input[type="text"]')!.value).toBe("3030");
+    expect(document.querySelector<HTMLSelectElement>(".mapping-row select")!.value).toBe("studentId");
+  });
+
   it("reapplies the mapped value after reverting a manual edit back to it", async () => {
     const profiles: Profile[] = [
       {
@@ -3366,6 +3847,125 @@ describe("popup", () => {
         values: { full_name: "Second Name" },
       });
     });
+  });
+
+  it("preserves unsaved excluded fields across profile switches", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const state: Record<string, unknown> = {
+      profiles,
+      presets: [
+        {
+          id: "preset-1",
+          name: "Registration",
+          formKey: "popup-form",
+          formTitle: "Registration",
+          fields: structuredClone(activeForm.fields),
+          values: {},
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    };
+
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(Object.fromEntries(keys.map((key) => [key, state[key]])));
+          },
+          set(value: Record<string, unknown>, callback: () => void) {
+            Object.assign(state, value);
+            callback();
+          },
+          remove(keys: string[], callback: () => void) {
+            for (const key of keys) {
+              delete state[key];
+            }
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({
+              ok: true,
+              data: {
+                status: "ready",
+                context: activeForm,
+              },
+            });
+            return;
+          }
+
+          if (message.type === "FILL_ACTIVE_FORM") {
+            callback({
+              ok: true,
+              data: {
+                filledFieldIds: [],
+                skippedFieldIds: [],
+              },
+            });
+            return;
+          }
+
+          callback({ ok: false, error: "Unknown message" });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>(".field-toggle")!.click();
+    expect(document.querySelector<HTMLButtonElement>(".field-toggle")!.textContent).toBe("Excluded");
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(document.querySelector<HTMLButtonElement>(".field-toggle")!.textContent).toBe("Excluded");
   });
 
   it("does not autosave or fill an incomplete Other selection", async () => {
@@ -4073,6 +4673,278 @@ describe("popup", () => {
     });
   });
 
+  it("clears stale skipped-field badges before a later fill attempt fails", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    let fillCount = 0;
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        fillCount += 1;
+        if (fillCount === 1) {
+          callback({
+            ok: true,
+            data: {
+              filledFieldIds: ["full_name"],
+              skippedFieldIds: ["department"],
+            },
+          });
+          return;
+        }
+
+        callback({
+          ok: false,
+          error: "The active tab changed to a different Google Form. Reopen the popup on the current form and try again.",
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+    await vi.waitFor(() => {
+      expect(
+        Array.from(document.querySelectorAll(".badge.warning")).map((node) =>
+          node.textContent?.trim(),
+        ),
+      ).toContain("Skipped on last fill");
+    });
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLDivElement>("#status-card")!.textContent).toBe(
+        "The active tab changed to a different Google Form. Reopen the popup on the current form and try again.",
+      );
+    });
+
+    expect(
+      Array.from(document.querySelectorAll(".badge.warning")).map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).not.toContain("Skipped on last fill");
+  });
+
+  it("clears a skipped-field badge when the field mapping is changed", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "alias",
+          label: "Alias",
+          normalizedLabel: "alias",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: [],
+            skippedFieldIds: ["alias"],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+    await vi.waitFor(() => {
+      expect(
+        Array.from(document.querySelectorAll(".badge.warning")).map((node) =>
+          node.textContent?.trim(),
+        ),
+      ).toContain("Skipped on last fill");
+    });
+
+    const mappingSelect = document.querySelector<HTMLSelectElement>(".mapping-row select")!;
+    mappingSelect.value = "fullName";
+    mappingSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(
+      Array.from(document.querySelectorAll(".badge.warning")).map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).not.toContain("Skipped on last fill");
+  });
+
+  it("clears a stale fill status message when the review state changes", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["full_name"],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLDivElement>("#status-card")!.textContent).toBe(
+        "Filled 1 field(s).",
+      );
+    });
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Edited";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
+    expect(statusCard.textContent).toBe("");
+    expect(statusCard.classList.contains("hidden")).toBe(true);
+  });
+
   it("does not report a fake section count when the form has no named sections", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",
@@ -4332,6 +5204,229 @@ describe("popup", () => {
     });
   });
 
+  it("drops older same-form history in memory after fill so stale suggestions do not persist", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        aliases: { fullName: ["full name"] },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { name: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "history-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      history: [
+        {
+          id: "history-1",
+          formKey: "history-form",
+          formTitle: "Registration",
+          formUrl: activeForm.url,
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Alpha",
+          lastFilledAt: 1,
+          filledFieldCount: 1,
+          skippedFieldCount: 0,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: unknown },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["full_name"],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", {
+      randomUUID: (() => {
+        let counter = 0;
+        return () => `id-${++counter}`;
+      })(),
+    });
+
+    await loadPopupModule();
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    expect(Array.from(profileSelect.options).find((option) => option.value === "profile-1")?.textContent).toContain("suggested");
+
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(Array.from(profileSelect.options).find((option) => option.value === "profile-2")?.textContent).toContain("suggested");
+      expect(Array.from(profileSelect.options).find((option) => option.value === "profile-1")?.textContent).not.toContain("suggested");
+    });
+  });
+
+  it("prefers the newer in-memory same-form history entry when fill timestamps tie", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        aliases: { fullName: ["full name"] },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { name: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "history-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      history: [
+        {
+          id: "history-1",
+          formKey: "history-form",
+          formTitle: "Registration",
+          formUrl: activeForm.url,
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Alpha",
+          lastFilledAt: 1000,
+          filledFieldCount: 1,
+          skippedFieldCount: 0,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: unknown },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["full_name"],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", {
+      randomUUID: (() => {
+        let counter = 0;
+        return () => `id-${++counter}`;
+      })(),
+    });
+    vi.setSystemTime(new Date(1000));
+
+    await loadPopupModule();
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    expect(Array.from(profileSelect.options).find((option) => option.value === "profile-1")?.textContent).toContain("suggested");
+
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(Array.from(profileSelect.options).find((option) => option.value === "profile-2")?.textContent).toContain("suggested");
+      expect(Array.from(profileSelect.options).find((option) => option.value === "profile-1")?.textContent).not.toContain("suggested");
+    });
+  });
+
   it("drops stale in-memory history beyond the recent-history cap before reranking profiles", async () => {
     const profiles: Profile[] = [
       {
@@ -4387,11 +5482,11 @@ describe("popup", () => {
       },
       ...Array.from({ length: 24 }, (_, index) => ({
         id: `history-${index + 2}`,
-        formKey: "history-cap-form",
-        formTitle: "Registration",
-        formUrl: activeForm.url,
-        lastUsedProfileId: "profile-2",
-        lastUsedProfileName: "Beta",
+        formKey: `other-form-${index + 1}`,
+        formTitle: `Other Form ${index + 1}`,
+        formUrl: `https://docs.google.com/forms/d/e/other-${index + 1}/viewform`,
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
         lastFilledAt: index + 2,
         filledFieldCount: 1,
         skippedFieldCount: 0,
@@ -4654,4 +5749,5 @@ describe("popup", () => {
       expect(statusCard.dataset.state).toBe("success");
     });
   });
+
 });

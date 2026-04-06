@@ -436,19 +436,21 @@ async function persistProfile(card: HTMLElement, profile: Profile): Promise<void
   };
 
   await saveProfile(next);
-  const profileIndex = state.profiles.findIndex((item) => item.id === next.id);
+  const savedProfile =
+    (await getProfiles()).find((item) => item.id === next.id) ?? next;
+  const profileIndex = state.profiles.findIndex((item) => item.id === savedProfile.id);
   if (profileIndex >= 0) {
-    state.profiles[profileIndex] = next;
+    state.profiles[profileIndex] = savedProfile;
   }
-  profile.name = next.name;
-  profile.values = next.values;
-  profile.aliases = next.aliases;
-  profile.updatedAt = next.updatedAt;
-  nameInput.value = next.name;
-  updateProfileCardMeta(card, next);
+  profile.name = savedProfile.name;
+  profile.values = savedProfile.values;
+  profile.aliases = savedProfile.aliases;
+  profile.updatedAt = savedProfile.updatedAt;
+  const refreshedCard = createProfileCard(savedProfile);
+  card.replaceWith(refreshedCard);
   renderDefaultProfileOptions();
   renderPrivacySummary();
-  setStatus(`Saved profile "${next.name}".`);
+  setStatus(`Saved profile "${savedProfile.name}".`);
 }
 
 function renderProfiles(): void {
@@ -562,7 +564,9 @@ async function runTopLevelAction(task: () => Promise<void>, fallbackMessage: str
 async function persistSettings(): Promise<void> {
   const settings = readSettingsControls();
   await saveSettings(settings);
-  state.settings = settings;
+  const savedSettings = await getSettings();
+  state.settings = savedSettings;
+  restoreSettingsControls(savedSettings);
 }
 
 async function persistSettingsFromControls(): Promise<void> {

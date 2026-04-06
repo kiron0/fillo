@@ -1,5 +1,5 @@
+import { runtimeManifestVersion } from "../../core/chrome-api";
 import { fillFormDocumentAsync, scanFormDocument } from "./form-dom";
-import { CONTENT_SCRIPT_VERSION } from "../../core/content-script-version";
 import type { ContentRequest, MessageResponse } from "../../core/types";
 
 function respond<T>(data: T): MessageResponse<T> {
@@ -13,7 +13,7 @@ function respondError(error: unknown): MessageResponse<never> {
 chrome.runtime.onMessage.addListener((message: ContentRequest, _sender, sendResponse) => {
   switch (message.type) {
     case "PING":
-      sendResponse(respond({ ready: true, version: CONTENT_SCRIPT_VERSION }));
+      sendResponse(respond({ ready: true, version: runtimeManifestVersion() }));
       return false;
     case "SCAN_FORM":
       try {

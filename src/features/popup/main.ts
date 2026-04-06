@@ -1,20 +1,40 @@
-import { hasChromeRuntime, runtimeOpenOptionsPage, runtimeSendMessage } from "../../core/chrome-api";
+import {
+  hasChromeRuntime,
+  runtimeOpenOptionsPage,
+  runtimeSendMessage,
+} from "../../core/chrome-api";
+import {
+  getSelectableOptions,
+  isChoiceWithOtherValue,
+  isGridValue,
+  isValidDateValue,
+  isValidTimeValue,
+  looksLikePlaceholderOption,
+  normalizeFieldValueForField,
+} from "../../core/field-value-normalization";
 import { rankProfilesForFields, suggestProfileKey } from "../../core/matching";
 import { normalizeText, optionEquals } from "../../core/normalization";
-import { deletePreset, getFormHistory, getPresetByFormKey, getProfiles, getSettings, saveHistoryEntry, savePreset } from "../../core/storage";
+import {
+  deletePreset,
+  getFormHistory,
+  getPresetByFormKey,
+  getProfiles,
+  getSettings,
+  saveHistoryEntry,
+  savePreset,
+} from "../../core/storage";
 import type {
   ActiveFormContext,
   ActiveFormLookup,
   BackgroundRequest,
-  ChoiceWithOtherValue,
   DetectedField,
   FieldValue,
   FillResult,
+  FormHistoryEntry,
   FormPreset,
   GridValue,
   MessageResponse,
   Profile,
-  FormHistoryEntry,
 } from "../../core/types";
 
 type PopupState = {
@@ -63,23 +83,35 @@ const formMeta = document.querySelector<HTMLParagraphElement>("#form-meta")!;
 const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
 const errorCard = document.querySelector<HTMLDivElement>("#error-card")!;
 const errorTitle = document.querySelector<HTMLHeadingElement>("#error-title")!;
-const errorMessage = document.querySelector<HTMLParagraphElement>("#error-message")!;
-const profileControls = document.querySelector<HTMLDivElement>("#profile-controls")!;
+const errorMessage =
+  document.querySelector<HTMLParagraphElement>("#error-message")!;
+const profileControls =
+  document.querySelector<HTMLDivElement>("#profile-controls")!;
 const fieldsContainer = document.querySelector<HTMLDivElement>("#fields")!;
-const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
-const profileSelectBlock = profileSelect.closest<HTMLElement>(".select-block") ?? profileSelect.parentElement;
-const profileCard = profileSelect.closest<HTMLElement>(".controls-card") ?? profileSelectBlock;
-const resetPresetButton = document.querySelector<HTMLButtonElement>("#reset-preset")!;
+const profileSelect =
+  document.querySelector<HTMLSelectElement>("#profile-select")!;
+const profileSelectBlock =
+  profileSelect.closest<HTMLElement>(".select-block") ??
+  profileSelect.parentElement;
+const profileCard =
+  profileSelect.closest<HTMLElement>(".controls-card") ?? profileSelectBlock;
+const resetPresetButton =
+  document.querySelector<HTMLButtonElement>("#reset-preset")!;
 const fillFormButton = document.querySelector<HTMLButtonElement>("#fill-form")!;
-const clearValuesButton = document.querySelector<HTMLButtonElement>("#clear-values")!;
-const openOptionsButton = document.querySelector<HTMLButtonElement>("#open-options")!;
+const clearValuesButton =
+  document.querySelector<HTMLButtonElement>("#clear-values")!;
+const openOptionsButton =
+  document.querySelector<HTMLButtonElement>("#open-options")!;
 
 let autosaveTimer: number | null = null;
 let presetSaveInFlight: Promise<void> | null = null;
 let presetCommitVersion = 0;
 let pendingPresetId: string | null = null;
 
-function setStatus(message: string, mode: "idle" | "error" | "success" = "idle"): void {
+function setStatus(
+  message: string,
+  mode: "idle" | "error" | "success" = "idle",
+): void {
   if (!message) {
     statusCard.textContent = "";
     statusCard.classList.add("hidden");
@@ -93,7 +125,10 @@ function setStatus(message: string, mode: "idle" | "error" | "success" = "idle")
 }
 
 function getSelectedProfile(): Profile | null {
-  return state.profiles.find((profile) => profile.id === state.selectedProfileId) ?? null;
+  return (
+    state.profiles.find((profile) => profile.id === state.selectedProfileId) ??
+    null
+  );
 }
 
 function normalizeSelectedProfileId(profileId: string | null): string | null {
@@ -101,19 +136,43 @@ function normalizeSelectedProfileId(profileId: string | null): string | null {
     return null;
   }
 
-  return state.profiles.some((profile) => profile.id === profileId) ? profileId : null;
+  return state.profiles.some((profile) => profile.id === profileId)
+    ? profileId
+    : null;
 }
 
-function getRankedProfileSuggestions(): ReturnType<typeof rankProfilesForFields> {
-  return state.activeForm ? rankProfilesForFields(state.activeForm.fields, state.profiles, state.history, state.activeForm.formKey) : [];
+function getRankedProfileSuggestions(): ReturnType<
+  typeof rankProfilesForFields
+> {
+  return state.activeForm
+    ? rankProfilesForFields(
+        state.activeForm.fields,
+        state.profiles,
+        state.history,
+        state.activeForm.formKey,
+      )
+    : [];
 }
 
 function getSuggestedProfileId(): string | null {
   return getRankedProfileSuggestions()[0]?.profile.id ?? null;
 }
 
-function normalizePopupHistory(entries: FormHistoryEntry[]): FormHistoryEntry[] {
-  return [...entries].sort((left, right) => right.lastFilledAt - left.lastFilledAt).slice(0, MAX_HISTORY_ENTRIES);
+function normalizePopupHistory(
+  entries: FormHistoryEntry[],
+): FormHistoryEntry[] {
+  const latestByFormKey = new Map<string, FormHistoryEntry>();
+
+  for (const entry of entries) {
+    const previous = latestByFormKey.get(entry.formKey);
+    if (!previous || entry.lastFilledAt >= previous.lastFilledAt) {
+      latestByFormKey.set(entry.formKey, entry);
+    }
+  }
+
+  return Array.from(latestByFormKey.values())
+    .sort((left, right) => right.lastFilledAt - left.lastFilledAt)
+    .slice(0, MAX_HISTORY_ENTRIES);
 }
 
 function setInvalidPageState(title: string, message: string): void {
@@ -132,8 +191,12 @@ function setReadyState(): void {
   errorCard.classList.add("hidden");
 }
 
-async function sendBackgroundMessage<T>(message: BackgroundRequest): Promise<T> {
-  const response = (await runtimeSendMessage<MessageResponse<T>>(message)) as MessageResponse<T>;
+async function sendBackgroundMessage<T>(
+  message: BackgroundRequest,
+): Promise<T> {
+  const response = (await runtimeSendMessage<MessageResponse<T>>(
+    message,
+  )) as MessageResponse<T>;
   if (!response?.ok) {
     throw new Error(response?.error ?? "Background request failed");
   }
@@ -155,13 +218,19 @@ function renderProfileSelect(): void {
   emptyOption.textContent = "No profile";
   profileSelect.append(emptyOption);
 
-  const suggestions = new Map(getRankedProfileSuggestions().map((entry, index) => [entry.profile.id, index]));
+  const suggestions = new Map(
+    getRankedProfileSuggestions().map((entry, index) => [
+      entry.profile.id,
+      index,
+    ]),
+  );
 
   for (const profile of state.profiles) {
     const option = document.createElement("option");
     option.value = profile.id;
     const suggestionIndex = suggestions.get(profile.id);
-    option.textContent = suggestionIndex === 0 ? `${profile.name} • suggested` : profile.name;
+    option.textContent =
+      suggestionIndex === 0 ? `${profile.name} • suggested` : profile.name;
     if (profile.id === state.selectedProfileId) {
       option.selected = true;
     }
@@ -170,26 +239,40 @@ function renderProfileSelect(): void {
 }
 
 function syncFieldMappingControl(fieldId: string): void {
-  const fieldCard = Array.from(fieldsContainer.querySelectorAll<HTMLElement>("[data-field-id]")).find(
-    (candidate) => candidate.dataset.fieldId === fieldId,
+  const fieldCard = Array.from(
+    fieldsContainer.querySelectorAll<HTMLElement>("[data-field-id]"),
+  ).find((candidate) => candidate.dataset.fieldId === fieldId);
+  const mappingSelect = fieldCard?.querySelector<HTMLSelectElement>(
+    ".mapping-row select",
   );
-  const mappingSelect = fieldCard?.querySelector<HTMLSelectElement>(".mapping-row select");
   if (!mappingSelect) {
     return;
   }
 
-  mappingSelect.value = state.unmappedFieldIds.has(fieldId) ? "" : (state.mappings[fieldId] ?? "");
+  mappingSelect.value = state.unmappedFieldIds.has(fieldId)
+    ? ""
+    : (state.mappings[fieldId] ?? "");
 }
 
-function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true): void {
+function updateFieldValue(
+  fieldId: string,
+  value: FieldValue,
+  markDirty = true,
+): void {
+  setStatus("");
   let shouldMarkDirty = markDirty;
   let mappingStateChanged = false;
 
   if (markDirty) {
-    const field = state.activeForm?.fields.find((candidate) => candidate.id === fieldId);
+    const field = state.activeForm?.fields.find(
+      (candidate) => candidate.id === fieldId,
+    );
     const profile = getSelectedProfile();
     const currentMapping = state.mappings[fieldId];
-    const mappedValue = field && profile && currentMapping ? coerceFieldValueForField(field, profile.values[currentMapping]) : undefined;
+    const mappedValue =
+      field && profile && currentMapping
+        ? coerceFieldValueForField(field, profile.values[currentMapping])
+        : undefined;
 
     if (currentMapping && mappedValue !== undefined) {
       if (fieldValuesEqual(value, mappedValue)) {
@@ -204,15 +287,29 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
     } else if (field && profile && state.autoBrokenMappings.has(fieldId)) {
       const brokenMapping = state.autoBrokenMappings.get(fieldId);
       const preferredMapping =
-        (brokenMapping && coerceFieldValueForField(field, profile.values[brokenMapping]) !== undefined ? brokenMapping : undefined) ??
-        (state.preset?.mappings?.[fieldId] && coerceFieldValueForField(field, profile.values[state.preset.mappings[fieldId]]) !== undefined
+        (brokenMapping &&
+        coerceFieldValueForField(field, profile.values[brokenMapping]) !==
+          undefined
+          ? brokenMapping
+          : undefined) ??
+        (state.preset?.mappings?.[fieldId] &&
+        coerceFieldValueForField(
+          field,
+          profile.values[state.preset.mappings[fieldId]],
+        ) !== undefined
           ? state.preset.mappings[fieldId]
           : undefined) ??
         suggestProfileKey(field, profile);
 
       if (preferredMapping) {
-        const preferredMappedValue = coerceFieldValueForField(field, profile.values[preferredMapping]);
-        if (preferredMappedValue !== undefined && fieldValuesEqual(value, preferredMappedValue)) {
+        const preferredMappedValue = coerceFieldValueForField(
+          field,
+          profile.values[preferredMapping],
+        );
+        if (
+          preferredMappedValue !== undefined &&
+          fieldValuesEqual(value, preferredMappedValue)
+        ) {
           state.mappings[fieldId] = preferredMapping;
           state.unmappedFieldIds.delete(fieldId);
           state.suppressedMappingFieldIds.delete(fieldId);
@@ -226,7 +323,9 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
 
   state.values[fieldId] = value;
   state.clearedFieldIds.delete(fieldId);
-  state.skippedFillFieldIds = state.skippedFillFieldIds.filter((candidate) => candidate !== fieldId);
+  state.skippedFillFieldIds = state.skippedFillFieldIds.filter(
+    (candidate) => candidate !== fieldId,
+  );
   if (shouldMarkDirty) {
     state.dirtyFieldIds.add(fieldId);
   } else {
@@ -241,8 +340,16 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
   refreshRenderedFieldReview(fieldId);
 }
 
-function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | undefined): boolean {
-  if (left === undefined || left === null || right === undefined || right === null) {
+function fieldValuesEqual(
+  left: FieldValue | undefined,
+  right: FieldValue | undefined,
+): boolean {
+  if (
+    left === undefined ||
+    left === null ||
+    right === undefined ||
+    right === null
+  ) {
     return (left ?? null) === (right ?? null);
   }
 
@@ -252,11 +359,22 @@ function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | unde
 
   if (isChoiceWithOtherValue(left) && isChoiceWithOtherValue(right)) {
     if (Array.isArray(left.selected) && Array.isArray(right.selected)) {
-      return compareOptionArrays(left.selected.map(String), right.selected.map(String)) && left.otherText === right.otherText;
+      return (
+        compareOptionArrays(
+          left.selected.map(String),
+          right.selected.map(String),
+        ) && left.otherText === right.otherText
+      );
     }
 
-    if (typeof left.selected === "string" && typeof right.selected === "string") {
-      return optionEquals(left.selected, right.selected) && left.otherText === right.otherText;
+    if (
+      typeof left.selected === "string" &&
+      typeof right.selected === "string"
+    ) {
+      return (
+        optionEquals(left.selected, right.selected) &&
+        left.otherText === right.otherText
+      );
     }
 
     return false;
@@ -269,19 +387,13 @@ function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | unde
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValue {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "choice_with_other";
-}
-
-function isGridValue(value: FieldValue | Profile["values"][string]): value is GridValue {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "grid";
-}
-
 function clearDirtyField(fieldId: string): void {
   state.dirtyFieldIds.delete(fieldId);
 }
 
-function getFieldTextSubtype(field: DetectedField): "text" | "email" | "number" | "tel" | "url" {
+function getFieldTextSubtype(
+  field: DetectedField,
+): "text" | "email" | "number" | "tel" | "url" {
   if (field.textSubtype) {
     return field.textSubtype;
   }
@@ -299,10 +411,18 @@ function getFieldTextSubtype(field: DetectedField): "text" | "email" | "number" 
   ) {
     return "url";
   }
-  if (normalizedLabel.includes("phone") || normalizedLabel.includes("mobile") || normalizedLabel.includes("contact")) {
+  if (
+    normalizedLabel.includes("phone") ||
+    normalizedLabel.includes("mobile") ||
+    normalizedLabel.includes("contact")
+  ) {
     return "tel";
   }
-  if (normalizedLabel.includes("number") || normalizedLabel.includes("count") || normalizedLabel.includes("age")) {
+  if (
+    normalizedLabel.includes("number") ||
+    normalizedLabel.includes("count") ||
+    normalizedLabel.includes("age")
+  ) {
     return "number";
   }
 
@@ -310,7 +430,9 @@ function getFieldTextSubtype(field: DetectedField): "text" | "email" | "number" 
 }
 
 function getFieldSectionIdentifier(field: DetectedField): string {
-  return field.sectionTitle ? normalizeText(field.sectionTitle).replace(/\s+/g, "_") : "form_overview";
+  return field.sectionTitle
+    ? normalizeText(field.sectionTitle).replace(/\s+/g, "_")
+    : "form_overview";
 }
 
 function getNamedSectionCount(fields: DetectedField[]): number {
@@ -322,16 +444,27 @@ function getNamedSectionCount(fields: DetectedField[]): number {
   ).size;
 }
 
-function getFieldValidationMessage(field: DetectedField, value: FieldValue | undefined): string | null {
+function getFieldValidationMessage(
+  field: DetectedField,
+  value: FieldValue | undefined,
+): string | null {
   if (value === undefined || value === null) {
     return null;
   }
 
-  if (field.type === "date" && typeof value === "string" && !isValidDateValue(value)) {
+  if (
+    field.type === "date" &&
+    typeof value === "string" &&
+    !isValidDateValue(value)
+  ) {
     return "Use YYYY-MM-DD for this date field.";
   }
 
-  if (field.type === "time" && typeof value === "string" && !isValidTimeValue(value)) {
+  if (
+    field.type === "time" &&
+    typeof value === "string" &&
+    !isValidTimeValue(value)
+  ) {
     return "Use 24-hour HH:MM for this time field.";
   }
 
@@ -347,11 +480,17 @@ function getFieldValidationMessage(field: DetectedField, value: FieldValue | und
 
     switch (getFieldTextSubtype(field)) {
       case "email":
-        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(textValue) ? null : "Enter a valid email address.";
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(textValue)
+          ? null
+          : "Enter a valid email address.";
       case "number":
-        return Number.isFinite(Number(textValue)) ? null : "Enter a valid number.";
+        return Number.isFinite(Number(textValue))
+          ? null
+          : "Enter a valid number.";
       case "tel":
-        return /^[+\d][\d\s().-]{5,}$/.test(textValue) ? null : "Enter a valid phone number.";
+        return /^[+\d][\d\s().-]{5,}$/.test(textValue)
+          ? null
+          : "Enter a valid phone number.";
       case "url":
         try {
           new URL(textValue);
@@ -378,13 +517,19 @@ function getFieldReviewState(field: DetectedField): {
   const include = !state.excludedFieldIds.has(field.id);
   const hasValue = value === null ? false : hasPersistableFieldValue(value);
   const requiredEmpty = include && field.required && !hasValue;
-  const invalidMessage = include ? getFieldValidationMessage(field, value) : null;
-  const cleared = state.clearedFieldIds.has(field.id) || (field.type === "dropdown" && state.values[field.id] === null);
+  const invalidMessage = include
+    ? getFieldValidationMessage(field, value)
+    : null;
+  const cleared =
+    state.clearedFieldIds.has(field.id) ||
+    (field.type === "dropdown" && state.values[field.id] === null);
 
   return { include, hasValue, requiredEmpty, invalidMessage, cleared };
 }
 
-function getCardReviewState(review: ReturnType<typeof getFieldReviewState>): "excluded" | "warning" | "ready" {
+function getCardReviewState(
+  review: ReturnType<typeof getFieldReviewState>,
+): "excluded" | "warning" | "ready" {
   if (!review.include) {
     return "excluded";
   }
@@ -392,7 +537,10 @@ function getCardReviewState(review: ReturnType<typeof getFieldReviewState>): "ex
   return review.requiredEmpty || review.invalidMessage ? "warning" : "ready";
 }
 
-function buildFieldMeta(field: DetectedField, review: ReturnType<typeof getFieldReviewState>): HTMLDivElement | null {
+function buildFieldMeta(
+  field: DetectedField,
+  review: ReturnType<typeof getFieldReviewState>,
+): HTMLDivElement | null {
   const meta = document.createElement("div");
   meta.className = "field-meta";
 
@@ -442,10 +590,12 @@ function buildFieldMeta(field: DetectedField, review: ReturnType<typeof getField
 }
 
 function refreshRenderedFieldReview(fieldId: string): void {
-  const field = state.activeForm?.fields.find((candidate) => candidate.id === fieldId);
-  const card = Array.from(fieldsContainer.querySelectorAll<HTMLElement>("[data-field-id]")).find(
-    (candidate) => candidate.dataset.fieldId === fieldId,
+  const field = state.activeForm?.fields.find(
+    (candidate) => candidate.id === fieldId,
   );
+  const card = Array.from(
+    fieldsContainer.querySelectorAll<HTMLElement>("[data-field-id]"),
+  ).find((candidate) => candidate.dataset.fieldId === fieldId);
   const header = card?.querySelector<HTMLElement>(".field-head");
 
   if (!field || !card || !header) {
@@ -492,7 +642,11 @@ function hasPersistableFieldValue(value: FieldValue | undefined): boolean {
   }
 
   if (isGridValue(value)) {
-    return Object.values(value.rows).some((rowValue) => (Array.isArray(rowValue) ? rowValue.length > 0 : String(rowValue).trim().length > 0));
+    return Object.values(value.rows).some((rowValue) =>
+      Array.isArray(rowValue)
+        ? rowValue.length > 0
+        : String(rowValue).trim().length > 0,
+    );
   }
 
   return true;
@@ -505,10 +659,15 @@ function compareOptionArrays(left: string[], right: string[]): boolean {
 
   const normalizedLeft = left.map((item) => normalizeText(item)).sort();
   const normalizedRight = right.map((item) => normalizeText(item)).sort();
-  return normalizedLeft.every((value, index) => value === normalizedRight[index]);
+  return normalizedLeft.every(
+    (value, index) => value === normalizedRight[index],
+  );
 }
 
-function compareGridRows(left: Record<string, string | string[]>, right: Record<string, string | string[]>): boolean {
+function compareGridRows(
+  left: Record<string, string | string[]>,
+  right: Record<string, string | string[]>,
+): boolean {
   const leftKeys = Object.keys(left).sort();
   const rightKeys = Object.keys(right).sort();
   if (!compareOptionArrays(leftKeys, rightKeys)) {
@@ -523,60 +682,30 @@ function compareGridRows(left: Record<string, string | string[]>, right: Record<
       return compareOptionArrays(leftValue.map(String), rightValue.map(String));
     }
 
-    return !Array.isArray(leftValue) && !Array.isArray(rightValue) && optionEquals(String(leftValue), String(rightValue));
+    return (
+      !Array.isArray(leftValue) &&
+      !Array.isArray(rightValue) &&
+      optionEquals(String(leftValue), String(rightValue))
+    );
   });
-}
-
-function normalizeGridValue(field: DetectedField, value: FieldValue | Profile["values"][string]): GridValue | undefined {
-  if (!isGridValue(value) || !field.gridRows?.length || !field.options?.length || !field.gridMode) {
-    return undefined;
-  }
-
-  const normalizedRows: Record<string, string | string[]> = {};
-
-  for (const [rowIndex, rowLabel] of field.gridRows.entries()) {
-    const rowKey = field.gridRowIds?.[rowIndex] ?? rowLabel;
-    const rawRowValue = value.rows[rowKey] ?? value.rows[rowLabel];
-    if (rawRowValue === undefined || rawRowValue === null) {
-      continue;
-    }
-
-    if (field.gridMode === "radio") {
-      if (typeof rawRowValue !== "string") {
-        continue;
-      }
-
-      const matchedOption = findMatchingOption(field, rawRowValue);
-      if (matchedOption) {
-        normalizedRows[rowKey] = matchedOption;
-      }
-      continue;
-    }
-
-    if (Array.isArray(rawRowValue)) {
-      const matchedOptions = rawRowValue
-        .map(String)
-        .map((item) => findMatchingOption(field, item))
-        .filter((item): item is string => Boolean(item));
-      if (matchedOptions.length > 0) {
-        normalizedRows[rowKey] = Array.from(new Set(matchedOptions));
-      }
-    }
-  }
-
-  return { kind: "grid", rows: normalizedRows };
 }
 
 function clonePreset(preset: FormPreset | null): FormPreset | null {
   return preset ? structuredClone(preset) : null;
 }
 
-function hasStoredFieldValue(values: Record<string, FieldValue>, fieldId: string): boolean {
+function hasStoredFieldValue(
+  values: Record<string, FieldValue>,
+  fieldId: string,
+): boolean {
   return Object.prototype.hasOwnProperty.call(values, fieldId);
 }
 
 function restorePresetFieldValue(field: DetectedField, fieldId: string): void {
-  const presetValue = coerceFieldValueForField(field, state.preset?.values[fieldId]);
+  const presetValue = coerceFieldValueForField(
+    field,
+    state.preset?.values[fieldId],
+  );
   if (presetValue !== undefined) {
     state.values[fieldId] = presetValue;
   } else {
@@ -584,22 +713,13 @@ function restorePresetFieldValue(field: DetectedField, fieldId: string): void {
   }
 }
 
-function looksLikePlaceholderOption(label: string): boolean {
-  const normalized = normalizeText(label);
-  return (
-    normalized === "choose" ||
-    normalized === "select" ||
-    normalized === "select an option" ||
-    normalized === "choose an option"
+function findMatchingOption(
+  field: DetectedField,
+  value: string,
+): string | undefined {
+  return getSelectableOptions(field).find((option) =>
+    optionEquals(option, value),
   );
-}
-
-function getSelectableOptions(field: DetectedField): string[] {
-  return (field.options ?? []).filter((option) => !looksLikePlaceholderOption(option));
-}
-
-function findMatchingOption(field: DetectedField, value: string): string | undefined {
-  return getSelectableOptions(field).find((option) => optionEquals(option, value));
 }
 
 function getScaleIconKind(field: DetectedField): "star" | "heart" | "thumb" {
@@ -637,12 +757,22 @@ function createScaleIcon(kind: "star" | "heart" | "thumb"): HTMLElement {
   return icon;
 }
 
-function syncScaleSelectionState(wrapper: HTMLElement, selectedValue: string): void {
-  const items = Array.from(wrapper.querySelectorAll<HTMLElement>(".rating-item"));
-  const selectedIndex = items.findIndex((item) => item.dataset.optionValue === selectedValue);
+function syncScaleSelectionState(
+  wrapper: HTMLElement,
+  selectedValue: string,
+): void {
+  const items = Array.from(
+    wrapper.querySelectorAll<HTMLElement>(".rating-item"),
+  );
+  const selectedIndex = items.findIndex(
+    (item) => item.dataset.optionValue === selectedValue,
+  );
 
   items.forEach((item, index) => {
-    item.classList.toggle("is-active", selectedIndex >= 0 && index <= selectedIndex);
+    item.classList.toggle(
+      "is-active",
+      selectedIndex >= 0 && index <= selectedIndex,
+    );
     item.classList.toggle("is-selected", index === selectedIndex);
   });
 }
@@ -668,194 +798,11 @@ function isPopupEditableField(field: DetectedField): boolean {
   }
 }
 
-function isValidDateValue(value: string): boolean {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) {
-    return false;
-  }
-
-  const [, yearText, monthText, dayText] = match;
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  );
-}
-
-function isValidTimeValue(value: string): boolean {
-  const match = /^(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
-  if (!match) {
-    return false;
-  }
-
-  const [, hoursText, minutesText, secondsText] = match;
-  const hours = Number(hoursText);
-  const minutes = Number(minutesText);
-  const seconds = secondsText === undefined ? 0 : Number(secondsText);
-  return hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59 && seconds >= 0 && seconds <= 59;
-}
-
-function normalizeCheckboxValues(
+function coerceFieldValueForField(
   field: DetectedField,
-  values: string[],
-  otherTextOverride?: string,
+  value: FieldValue | Profile["values"][string] | undefined,
 ): FieldValue | undefined {
-  const selected: string[] = [];
-  const unmatched: string[] = [];
-  let otherSelected = false;
-
-  for (const rawValue of values) {
-    const trimmedValue = rawValue.trim();
-    if (!trimmedValue) {
-      continue;
-    }
-
-    if (field.otherOption && optionEquals(trimmedValue, field.otherOption)) {
-      if (!selected.some((value) => optionEquals(value, field.otherOption as string))) {
-        selected.push(field.otherOption);
-      }
-      otherSelected = true;
-      continue;
-    }
-
-    const matchedOption = findMatchingOption(field, trimmedValue);
-    if (matchedOption) {
-      if (!selected.some((value) => optionEquals(value, matchedOption))) {
-        selected.push(matchedOption);
-      }
-      continue;
-    }
-
-    unmatched.push(trimmedValue);
-  }
-
-  if (unmatched.length > 1) {
-    return undefined;
-  }
-
-  if (unmatched.length === 1) {
-    if (!field.otherOption) {
-      return undefined;
-    }
-
-    if (!selected.some((value) => optionEquals(value, field.otherOption as string))) {
-      selected.push(field.otherOption);
-    }
-
-    return {
-      kind: "choice_with_other",
-      selected,
-      otherText: unmatched[0],
-    };
-  }
-
-  if (otherSelected) {
-    const trimmedOtherText = (otherTextOverride ?? "").trim();
-    if (!trimmedOtherText) {
-      const selectedWithoutOther = selected.filter((value) => !optionEquals(value, field.otherOption as string));
-      return selectedWithoutOther.length > 0 ? selectedWithoutOther : undefined;
-    }
-
-    return {
-      kind: "choice_with_other",
-      selected,
-      otherText: trimmedOtherText,
-    };
-  }
-
-  return selected.length > 0 ? selected : undefined;
-}
-
-function coerceFieldValueForField(field: DetectedField, value: FieldValue | Profile["values"][string] | undefined): FieldValue | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
-
-  switch (field.type) {
-    case "checkbox":
-      if (isChoiceWithOtherValue(value)) {
-        return Array.isArray(value.selected)
-          ? normalizeCheckboxValues(field, value.selected.map(String), value.otherText)
-          : undefined;
-      }
-
-      if (typeof value === "string") {
-        return normalizeCheckboxValues(field, [value]);
-      }
-
-      if (Array.isArray(value)) {
-        return normalizeCheckboxValues(field, value.map(String));
-      }
-
-      return undefined;
-    case "grid":
-      return normalizeGridValue(field, value);
-    case "date":
-      return typeof value === "string" && isValidDateValue(value) ? value : undefined;
-    case "time":
-      return typeof value === "string" && isValidTimeValue(value) ? value : undefined;
-    case "radio":
-    case "scale":
-    case "dropdown": {
-      if (isChoiceWithOtherValue(value)) {
-        if (field.type === "dropdown" || typeof value.selected !== "string") {
-          return undefined;
-        }
-
-        if (field.otherOption && optionEquals(value.selected, field.otherOption)) {
-          if (!value.otherText.trim()) {
-            return undefined;
-          }
-
-          return {
-            kind: "choice_with_other",
-            selected: field.otherOption,
-            otherText: value.otherText,
-          };
-        }
-
-        const matchedOption = findMatchingOption(field, String(value.selected));
-        return matchedOption;
-      }
-
-      if (typeof value !== "string" && typeof value !== "number") {
-        return undefined;
-      }
-
-      const normalizedValue = String(value);
-      const matchedOption = findMatchingOption(field, normalizedValue);
-      if (matchedOption) {
-        if ((field.type === "radio" || field.type === "scale") && field.otherOption && optionEquals(matchedOption, field.otherOption)) {
-          return undefined;
-        }
-
-        return matchedOption;
-      }
-
-      if (field.type === "dropdown" && getSelectableOptions(field).length === 0 && normalizedValue.trim() && !looksLikePlaceholderOption(normalizedValue)) {
-        return normalizedValue;
-      }
-
-      if ((field.type === "radio" || field.type === "scale") && field.otherOption) {
-        return {
-          kind: "choice_with_other",
-          selected: field.otherOption,
-          otherText: normalizedValue,
-        };
-      }
-
-      return undefined;
-    }
-    case "text":
-    case "textarea":
-      return typeof value === "string" || typeof value === "number" ? value : undefined;
-    default:
-      return undefined;
-  }
+  return normalizeFieldValueForField(field, value);
 }
 
 function buildFillValues(): Record<string, FieldValue> {
@@ -867,20 +814,40 @@ function buildFillValues(): Record<string, FieldValue> {
     state.activeForm.fields
       .filter((field) => !state.excludedFieldIds.has(field.id))
       .map((field) => {
-        if (field.type === "dropdown" && hasStoredFieldValue(state.values, field.id) && state.values[field.id] === null) {
+        if (
+          field.type === "dropdown" &&
+          hasStoredFieldValue(state.values, field.id) &&
+          state.values[field.id] === null
+        ) {
           return [field.id, null] as const;
         }
 
-        return [field.id, coerceFieldValueForField(field, state.values[field.id])] as const;
+        return [
+          field.id,
+          coerceFieldValueForField(field, state.values[field.id]),
+        ] as const;
       })
-      .filter(([fieldId, value]) => value === null || hasPersistableFieldValue(value) || (state.activeForm?.fields.find((field) => field.id === fieldId)?.type === "dropdown" && value === null)),
+      .filter(
+        ([fieldId, value]) =>
+          value === null ||
+          hasPersistableFieldValue(value) ||
+          (state.activeForm?.fields.find((field) => field.id === fieldId)
+            ?.type === "dropdown" &&
+            value === null),
+      ),
   ) as Record<string, FieldValue>;
 }
 
 function updateFieldMapping(fieldId: string, value: string): void {
-  const field = state.activeForm?.fields.find((candidate) => candidate.id === fieldId);
+  setStatus("");
+  const field = state.activeForm?.fields.find(
+    (candidate) => candidate.id === fieldId,
+  );
   const profile = getSelectedProfile();
   const previousMapping = state.mappings[fieldId];
+  state.skippedFillFieldIds = state.skippedFillFieldIds.filter(
+    (candidate) => candidate !== fieldId,
+  );
 
   if (!value) {
     delete state.mappings[fieldId];
@@ -890,7 +857,10 @@ function updateFieldMapping(fieldId: string, value: string): void {
     state.clearedFieldIds.delete(fieldId);
 
     if (field && profile && previousMapping) {
-      const previousMappedValue = coerceFieldValueForField(field, profile.values[previousMapping]);
+      const previousMappedValue = coerceFieldValueForField(
+        field,
+        profile.values[previousMapping],
+      );
       if (fieldValuesEqual(state.values[fieldId], previousMappedValue)) {
         restorePresetFieldValue(field, fieldId);
         clearDirtyField(fieldId);
@@ -932,20 +902,28 @@ function buildPresetPayload(): FormPreset | null {
     return null;
   }
 
-  const activeFieldIds = new Set(state.activeForm.fields.map((field) => field.id));
+  const activeFieldIds = new Set(
+    state.activeForm.fields.map((field) => field.id),
+  );
   const presetValues = state.preset?.values ?? {};
   const presetMappings = state.preset?.mappings ?? {};
   const presetUnmappedFieldIds = new Set(state.preset?.unmappedFieldIds ?? []);
   const values = Object.fromEntries(
     state.activeForm.fields
       .map((field) => {
-        const currentValue = coerceFieldValueForField(field, state.values[field.id]);
+        const currentValue = coerceFieldValueForField(
+          field,
+          state.values[field.id],
+        );
         if (hasPersistableFieldValue(currentValue)) {
           return [field.id, currentValue] as const;
         }
 
         if (state.clearedFieldIds.has(field.id)) {
-          const presetValue = coerceFieldValueForField(field, presetValues[field.id]);
+          const presetValue = coerceFieldValueForField(
+            field,
+            presetValues[field.id],
+          );
           if (hasPersistableFieldValue(presetValue)) {
             return [field.id, presetValue] as const;
           }
@@ -953,50 +931,67 @@ function buildPresetPayload(): FormPreset | null {
 
         return null;
       })
-      .filter((entry): entry is readonly [string, FieldValue] => Boolean(entry)),
+      .filter((entry): entry is readonly [string, FieldValue] =>
+        Boolean(entry),
+      ),
   ) as Record<string, FieldValue>;
 
   const persistedMappings: Record<string, string> = {};
   const persistedUnmappedFieldIds = new Set<string>();
 
   for (const field of state.activeForm.fields) {
-    const currentMapping = state.selectedProfileId ? state.mappings[field.id] : undefined;
-    const preservedPresetMapping = state.clearedFieldIds.has(field.id) ? presetMappings[field.id] : undefined;
+    const currentMapping = state.mappings[field.id];
+    const preservedPresetMapping = state.clearedFieldIds.has(field.id)
+      ? presetMappings[field.id]
+      : undefined;
     const mappingValue = currentMapping ?? preservedPresetMapping;
     if (mappingValue) {
       persistedMappings[field.id] = mappingValue;
     }
 
-    const hasCurrentExplicitNoMapping = state.selectedProfileId && state.unmappedFieldIds.has(field.id);
-    const hasPreservedPresetNoMapping = state.clearedFieldIds.has(field.id) && presetUnmappedFieldIds.has(field.id);
+    const hasCurrentExplicitNoMapping = state.unmappedFieldIds.has(field.id);
+    const hasPreservedPresetNoMapping =
+      state.clearedFieldIds.has(field.id) &&
+      presetUnmappedFieldIds.has(field.id);
     if (hasCurrentExplicitNoMapping || hasPreservedPresetNoMapping) {
       persistedUnmappedFieldIds.add(field.id);
     }
   }
 
   const hasValues = Object.keys(values).length > 0;
-  const normalizedUnmappedFieldIds = Array.from(persistedUnmappedFieldIds).filter((fieldId) => activeFieldIds.has(fieldId));
-  const normalizedExcludedFieldIds = Array.from(state.excludedFieldIds).filter((fieldId) => activeFieldIds.has(fieldId));
+  const normalizedUnmappedFieldIds = Array.from(
+    persistedUnmappedFieldIds,
+  ).filter((fieldId) => activeFieldIds.has(fieldId));
+  const normalizedExcludedFieldIds = Array.from(state.excludedFieldIds).filter(
+    (fieldId) => activeFieldIds.has(fieldId),
+  );
   const sections = Array.from(
-    state.activeForm.fields.reduce<Map<string, { id: string; title: string; fieldIds: string[] }>>((map, field) => {
-      if (!field.sectionTitle?.trim()) {
-        return map;
-      }
+    state.activeForm.fields
+      .reduce<Map<string, { id: string; title: string; fieldIds: string[] }>>(
+        (map, field) => {
+          if (!field.sectionTitle?.trim()) {
+            return map;
+          }
 
-      const key = getFieldSectionIdentifier(field);
-      const title = field.sectionTitle;
-      const current = map.get(key) ?? { id: key, title, fieldIds: [] };
-      current.fieldIds.push(field.id);
-      map.set(key, current);
-      return map;
-    }, new Map()).values(),
+          const key = getFieldSectionIdentifier(field);
+          const title = field.sectionTitle;
+          const current = map.get(key) ?? { id: key, title, fieldIds: [] };
+          current.fieldIds.push(field.id);
+          map.set(key, current);
+          return map;
+        },
+        new Map(),
+      )
+      .values(),
   ).map((section) => ({
     ...section,
     updatedAt: Date.now(),
   }));
 
   const hasMappings =
-    Object.keys(persistedMappings).length > 0 || normalizedUnmappedFieldIds.length > 0 || normalizedExcludedFieldIds.length > 0;
+    Object.keys(persistedMappings).length > 0 ||
+    normalizedUnmappedFieldIds.length > 0 ||
+    normalizedExcludedFieldIds.length > 0;
   if (!hasValues && !hasMappings) {
     return null;
   }
@@ -1011,8 +1006,12 @@ function buildPresetPayload(): FormPreset | null {
     fields: structuredClone(state.activeForm.fields),
     values: structuredClone(values),
     mappings: persistedMappings,
-    ...(normalizedUnmappedFieldIds.length ? { unmappedFieldIds: normalizedUnmappedFieldIds } : {}),
-    ...(normalizedExcludedFieldIds.length ? { excludedFieldIds: normalizedExcludedFieldIds } : {}),
+    ...(normalizedUnmappedFieldIds.length
+      ? { unmappedFieldIds: normalizedUnmappedFieldIds }
+      : {}),
+    ...(normalizedExcludedFieldIds.length
+      ? { excludedFieldIds: normalizedExcludedFieldIds }
+      : {}),
     ...(sections.length ? { sections } : {}),
     mappingSchemaVersion: 2,
     createdAt: state.preset?.createdAt ?? now,
@@ -1084,11 +1083,16 @@ function renderPresetActions(): void {
 }
 
 function getFieldDisplayLabel(fieldId: string): string {
-  return state.activeForm?.fields.find((field) => field.id === fieldId)?.label ?? fieldId;
+  return (
+    state.activeForm?.fields.find((field) => field.id === fieldId)?.label ??
+    fieldId
+  );
 }
 
 function getFieldType(fieldId: string): DetectedField["type"] | null {
-  return state.activeForm?.fields.find((field) => field.id === fieldId)?.type ?? null;
+  return (
+    state.activeForm?.fields.find((field) => field.id === fieldId)?.type ?? null
+  );
 }
 
 function schedulePresetSave(): void {
@@ -1105,12 +1109,18 @@ function schedulePresetSave(): void {
   autosaveTimer = window.setTimeout(() => {
     autosaveTimer = null;
     void runPresetPersist().catch((error) => {
-      setStatus(error instanceof Error ? error.message : "Unable to save preset", "error");
+      setStatus(
+        error instanceof Error ? error.message : "Unable to save preset",
+        "error",
+      );
     });
   }, AUTOSAVE_DELAY_MS);
 }
 
-function createValueControl(field: DetectedField, value: FieldValue): HTMLElement {
+function createValueControl(
+  field: DetectedField,
+  value: FieldValue,
+): HTMLElement {
   if (!isPopupEditableField(field)) {
     const input = document.createElement("input");
     input.type = "text";
@@ -1125,18 +1135,28 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       const textarea = document.createElement("textarea");
       textarea.rows = 3;
       textarea.placeholder = "Your answer";
-      textarea.value = typeof value === "string" ? value : "";
-      textarea.addEventListener("input", () => updateFieldValue(field.id, textarea.value));
+      textarea.value =
+        typeof value === "string" || typeof value === "number"
+          ? String(value)
+          : "";
+      textarea.addEventListener("input", () =>
+        updateFieldValue(field.id, textarea.value),
+      );
       return textarea;
     }
     case "radio": {
       const wrapper = document.createElement("div");
       wrapper.className = "choice-with-other checkbox-list";
 
-      const selectedValue = isChoiceWithOtherValue(value) && typeof value.selected === "string" ? value.selected : String(value ?? "");
+      const selectedValue =
+        isChoiceWithOtherValue(value) && typeof value.selected === "string"
+          ? value.selected
+          : String(value ?? "");
       const otherText = isChoiceWithOtherValue(value) ? value.otherText : "";
       const radioName = `popup-radio-${field.id}`;
-      const hadOtherSelected = field.otherOption ? selectedValue === field.otherOption : false;
+      const hadOtherSelected = field.otherOption
+        ? selectedValue === field.otherOption
+        : false;
 
       for (const optionValue of field.options ?? []) {
         const label = document.createElement("label");
@@ -1199,9 +1219,15 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
         const radioName = `popup-scale-${field.id}`;
         const options = field.options ?? [];
 
-        wrapper.style.setProperty("--linear-columns", String(Math.min(options.length || 1, 5)));
+        wrapper.style.setProperty(
+          "--linear-columns",
+          String(Math.min(options.length || 1, 5)),
+        );
 
-        const selectedValue = isChoiceWithOtherValue(value) && typeof value.selected === "string" ? value.selected : String(value ?? "");
+        const selectedValue =
+          isChoiceWithOtherValue(value) && typeof value.selected === "string"
+            ? value.selected
+            : String(value ?? "");
 
         for (const optionValue of options) {
           const label = document.createElement("label");
@@ -1234,12 +1260,18 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       const wrapper = document.createElement("div");
       wrapper.className = "rating-scale";
 
-      const selectedValue = isChoiceWithOtherValue(value) && typeof value.selected === "string" ? value.selected : String(value ?? "");
+      const selectedValue =
+        isChoiceWithOtherValue(value) && typeof value.selected === "string"
+          ? value.selected
+          : String(value ?? "");
       const iconKind = getScaleIconKind(field);
       const radioName = `popup-scale-${field.id}`;
       const options = field.options ?? [];
 
-      wrapper.style.setProperty("--rating-columns", String(Math.min(options.length || 1, 5)));
+      wrapper.style.setProperty(
+        "--rating-columns",
+        String(Math.min(options.length || 1, 5)),
+      );
 
       for (const optionValue of options) {
         const label = document.createElement("label");
@@ -1279,7 +1311,11 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
 
       const selectedValue = typeof value === "string" ? value : "";
       const dropdownOptions = getSelectableOptions(field);
-      if (selectedValue && !looksLikePlaceholderOption(selectedValue) && !dropdownOptions.some((option) => optionEquals(option, selectedValue))) {
+      if (
+        selectedValue &&
+        !looksLikePlaceholderOption(selectedValue) &&
+        !dropdownOptions.some((option) => optionEquals(option, selectedValue))
+      ) {
         dropdownOptions.unshift(selectedValue);
       }
 
@@ -1293,7 +1329,12 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
 
       select.addEventListener("change", () => {
         const selectedValue = select.value;
-        updateFieldValue(field.id, selectedValue && !looksLikePlaceholderOption(selectedValue) ? selectedValue : null);
+        updateFieldValue(
+          field.id,
+          selectedValue && !looksLikePlaceholderOption(selectedValue)
+            ? selectedValue
+            : null,
+        );
       });
       return select;
     }
@@ -1302,17 +1343,27 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       const input = document.createElement("input");
       input.type = field.type;
       input.value = typeof value === "string" ? value : "";
-      input.addEventListener("input", () => updateFieldValue(field.id, input.value || null));
+      input.addEventListener("input", () =>
+        updateFieldValue(field.id, input.value || null),
+      );
       return input;
     }
     case "checkbox": {
       const wrapper = document.createElement("div");
       wrapper.className = "checkbox-list";
-      const selectedValues = isChoiceWithOtherValue(value) && Array.isArray(value.selected) ? value.selected : Array.isArray(value) ? value.map(String) : [];
+      const selectedValues =
+        isChoiceWithOtherValue(value) && Array.isArray(value.selected)
+          ? value.selected
+          : Array.isArray(value)
+            ? value.map(String)
+            : [];
       const selected = new Set(selectedValues);
       const getCurrentSelectedValues = (): string[] => {
         const current = state.values[field.id];
-        if (isChoiceWithOtherValue(current) && Array.isArray(current.selected)) {
+        if (
+          isChoiceWithOtherValue(current) &&
+          Array.isArray(current.selected)
+        ) {
           return current.selected.map(String);
         }
 
@@ -1395,7 +1446,9 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
       for (const [rowIndex, rowLabel] of rows.entries()) {
         const rowKey = field.gridRowIds?.[rowIndex] ?? rowLabel;
         const selectedValue = currentRows[rowKey] ?? currentRows[rowLabel];
-        const selectedValues = Array.isArray(selectedValue) ? selectedValue.map(String) : [];
+        const selectedValues = Array.isArray(selectedValue)
+          ? selectedValue.map(String)
+          : [];
 
         const group = document.createElement("section");
         group.className = "grid-group";
@@ -1423,9 +1476,10 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
             input.name = `popup-grid-${field.id}-row-${rowIndex}`;
           }
           input.value = column;
-          input.checked = mode === "checkbox"
-            ? selectedValues.some((value) => optionEquals(value, column))
-            : optionEquals(String(selectedValue ?? ""), column);
+          input.checked =
+            mode === "checkbox"
+              ? selectedValues.some((value) => optionEquals(value, column))
+              : optionEquals(String(selectedValue ?? ""), column);
           input.addEventListener("change", () => {
             const current: GridValue = isGridValue(state.values[field.id])
               ? structuredClone(state.values[field.id] as GridValue)
@@ -1434,8 +1488,12 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
 
             if (mode === "checkbox") {
               const existingRowValue = nextRows[rowKey] ?? nextRows[rowLabel];
-              const nextSelected = Array.isArray(existingRowValue) ? [...existingRowValue] : [];
-              const existingIndex = nextSelected.findIndex((value) => optionEquals(value, column));
+              const nextSelected = Array.isArray(existingRowValue)
+                ? [...existingRowValue]
+                : [];
+              const existingIndex = nextSelected.findIndex((value) =>
+                optionEquals(value, column),
+              );
               if (input.checked && existingIndex === -1) {
                 nextSelected.push(column);
               }
@@ -1478,9 +1536,14 @@ function createValueControl(field: DetectedField, value: FieldValue): HTMLElemen
     default: {
       const input = document.createElement("input");
       input.type = "text";
-      input.value = typeof value === "string" || typeof value === "number" ? String(value) : "";
+      input.value =
+        typeof value === "string" || typeof value === "number"
+          ? String(value)
+          : "";
       input.placeholder = "Your answer";
-      input.addEventListener("input", () => updateFieldValue(field.id, input.value));
+      input.addEventListener("input", () =>
+        updateFieldValue(field.id, input.value),
+      );
       return input;
     }
   }
@@ -1496,13 +1559,16 @@ function renderFields(): void {
 
   const profile = getSelectedProfile();
 
-  const sections = state.activeForm.fields.reduce<Map<string, DetectedField[]>>((map, field) => {
-    const key = getFieldSectionIdentifier(field);
-    const existing = map.get(key) ?? [];
-    existing.push(field);
-    map.set(key, existing);
-    return map;
-  }, new Map());
+  const sections = state.activeForm.fields.reduce<Map<string, DetectedField[]>>(
+    (map, field) => {
+      const key = getFieldSectionIdentifier(field);
+      const existing = map.get(key) ?? [];
+      existing.push(field);
+      map.set(key, existing);
+      return map;
+    },
+    new Map(),
+  );
 
   for (const [sectionKey, fields] of sections) {
     const section = document.createElement("section");
@@ -1512,7 +1578,8 @@ function renderFields(): void {
     const sectionHeading = fields[0]?.sectionTitle?.trim();
     const shouldRenderSectionHeading =
       Boolean(sectionHeading) &&
-      normalizeText(sectionHeading ?? "") !== normalizeText(state.activeForm.title) &&
+      normalizeText(sectionHeading ?? "") !==
+        normalizeText(state.activeForm.title) &&
       !(sectionKey === "form_overview");
 
     if (shouldRenderSectionHeading && sectionHeading) {
@@ -1559,14 +1626,20 @@ function renderFields(): void {
       includeButton.type = "button";
       includeButton.className = "field-toggle";
       includeButton.textContent = review.include ? "Included" : "Excluded";
-      includeButton.setAttribute("aria-pressed", review.include ? "true" : "false");
+      includeButton.setAttribute(
+        "aria-pressed",
+        review.include ? "true" : "false",
+      );
       includeButton.addEventListener("click", () => {
+        setStatus("");
         if (!review.include) {
           state.excludedFieldIds.delete(field.id);
         } else {
           state.excludedFieldIds.add(field.id);
         }
-        state.skippedFillFieldIds = state.skippedFillFieldIds.filter((fieldId) => fieldId !== field.id);
+        state.skippedFillFieldIds = state.skippedFillFieldIds.filter(
+          (fieldId) => fieldId !== field.id,
+        );
         schedulePresetSave();
         renderFields();
       });
@@ -1591,8 +1664,9 @@ function renderFields(): void {
       body.append(createValueControl(field, state.values[field.id] ?? null));
 
       if (profile && isPopupEditableField(field)) {
-        const compatibleProfileKeys = Object.keys(profile.values).filter((key) =>
-          coerceFieldValueForField(field, profile.values[key]) !== undefined,
+        const compatibleProfileKeys = Object.keys(profile.values).filter(
+          (key) =>
+            coerceFieldValueForField(field, profile.values[key]) !== undefined,
         );
         if (compatibleProfileKeys.length > 0 || state.mappings[field.id]) {
           const mappingRow = document.createElement("label");
@@ -1605,7 +1679,8 @@ function renderFields(): void {
           const noneOption = document.createElement("option");
           noneOption.value = "";
           noneOption.textContent = "No mapping";
-          noneOption.selected = state.unmappedFieldIds.has(field.id) || !state.mappings[field.id];
+          noneOption.selected =
+            state.unmappedFieldIds.has(field.id) || !state.mappings[field.id];
           mappingSelect.append(noneOption);
 
           for (const key of compatibleProfileKeys) {
@@ -1637,6 +1712,9 @@ function renderFields(): void {
 }
 
 function applyProfile(profileId: string | null, autosave = true): void {
+  if (state.activeForm) {
+    setStatus("");
+  }
   const previousProfile = getSelectedProfile();
   const previousValues = { ...state.values };
   const previousMappings = { ...state.mappings };
@@ -1651,7 +1729,6 @@ function applyProfile(profileId: string | null, autosave = true): void {
   const presetValues = state.preset?.values ?? {};
   const presetMappings = state.preset?.mappings ?? {};
   const presetUnmappedFieldIds = new Set(state.preset?.unmappedFieldIds ?? []);
-  state.excludedFieldIds = new Set(state.preset?.excludedFieldIds ?? state.excludedFieldIds);
   const nextValues: Record<string, FieldValue> = {};
   const nextMappings: Record<string, string> = {};
   const nextUnmappedFieldIds = new Set<string>();
@@ -1665,15 +1742,34 @@ function applyProfile(profileId: string | null, autosave = true): void {
     const currentMapping = previousMappings[field.id];
     const presetMapping = presetMappings[field.id];
     const isMappingSuppressed = state.suppressedMappingFieldIds.has(field.id);
-    const hasExplicitNoMapping = previousUnmappedFieldIds.has(field.id) || presetUnmappedFieldIds.has(field.id);
-    const suggestedMapping = profile ? suggestProfileKey(field, profile) : undefined;
+    const hasExplicitNoMapping =
+      previousUnmappedFieldIds.has(field.id) ||
+      presetUnmappedFieldIds.has(field.id);
+    const suggestedMapping = profile
+      ? suggestProfileKey(field, profile)
+      : undefined;
     const mappingKey =
       isMappingSuppressed || hasExplicitNoMapping
         ? undefined
         : ((!profile ? (currentMapping ?? presetMapping) : undefined) ??
-          (profile && currentMapping && coerceFieldValueForField(field, profile.values[currentMapping]) !== undefined ? currentMapping : undefined) ??
-          (profile && presetMapping && coerceFieldValueForField(field, profile.values[presetMapping]) !== undefined ? presetMapping : undefined) ??
-          (profile && suggestedMapping && coerceFieldValueForField(field, profile.values[suggestedMapping]) !== undefined ? suggestedMapping : undefined));
+          (profile &&
+          currentMapping &&
+          coerceFieldValueForField(field, profile.values[currentMapping]) !==
+            undefined
+            ? currentMapping
+            : undefined) ??
+          (profile &&
+          presetMapping &&
+          coerceFieldValueForField(field, profile.values[presetMapping]) !==
+            undefined
+            ? presetMapping
+            : undefined) ??
+          (profile &&
+          suggestedMapping &&
+          coerceFieldValueForField(field, profile.values[suggestedMapping]) !==
+            undefined
+            ? suggestedMapping
+            : undefined));
 
     if (mappingKey) {
       nextMappings[field.id] = mappingKey;
@@ -1686,12 +1782,17 @@ function applyProfile(profileId: string | null, autosave = true): void {
       nextAutoBrokenMappings.set(field.id, brokenMapping);
     }
 
-    if (state.dirtyFieldIds.has(field.id) && hasStoredFieldValue(previousValues, field.id)) {
+    if (
+      state.dirtyFieldIds.has(field.id) &&
+      hasStoredFieldValue(previousValues, field.id)
+    ) {
       nextValues[field.id] = previousValues[field.id];
       continue;
     }
 
-    const mappedValue = mappingKey ? coerceFieldValueForField(field, profile?.values[mappingKey]) : undefined;
+    const mappedValue = mappingKey
+      ? coerceFieldValueForField(field, profile?.values[mappingKey])
+      : undefined;
     if (mappedValue !== undefined) {
       nextValues[field.id] = mappedValue;
       continue;
@@ -1703,7 +1804,9 @@ function applyProfile(profileId: string | null, autosave = true): void {
       continue;
     }
 
-    const previousMappedValue = currentMapping ? coerceFieldValueForField(field, previousProfile?.values[currentMapping]) : undefined;
+    const previousMappedValue = currentMapping
+      ? coerceFieldValueForField(field, previousProfile?.values[currentMapping])
+      : undefined;
     if (
       hasStoredFieldValue(previousValues, field.id) &&
       currentMapping &&
@@ -1733,7 +1836,9 @@ async function loadPopup(): Promise<void> {
     getProfiles(),
     getSettings(),
     getFormHistory(),
-    sendBackgroundMessage<ActiveFormLookup>({ type: "GET_ACTIVE_FORM_CONTEXT" }),
+    sendBackgroundMessage<ActiveFormLookup>({
+      type: "GET_ACTIVE_FORM_CONTEXT",
+    }),
   ]);
 
   state.profiles = profiles;
@@ -1743,7 +1848,9 @@ async function loadPopup(): Promise<void> {
   state.activeForm = lookup.context ?? null;
 
   if (lookup.status !== "ready" || !lookup.context) {
-    const isEditModeUrl = typeof lookup.pageUrl === "string" && /\/forms\/.+\/edit(?:[?#]|$)/.test(lookup.pageUrl);
+    const isEditModeUrl =
+      typeof lookup.pageUrl === "string" &&
+      /\/forms\/.+\/edit(?:[?#]|$)/.test(lookup.pageUrl);
     const message =
       lookup.status === "invalid_url"
         ? isEditModeUrl
@@ -1755,8 +1862,13 @@ async function loadPopup(): Promise<void> {
     if (lookup.status === "unsupported_only" && lookup.context) {
       setReadyState();
       state.preset = await getPresetByFormKey(lookup.context.formKey);
-      const suggestedProfileId = settings.autoLoadMatchingProfile ? getSuggestedProfileId() : null;
-      state.selectedProfileId = normalizeSelectedProfileId(suggestedProfileId ?? settings.defaultProfileId);
+      state.excludedFieldIds = new Set(state.preset?.excludedFieldIds ?? []);
+      const suggestedProfileId = settings.autoLoadMatchingProfile
+        ? getSuggestedProfileId()
+        : null;
+      state.selectedProfileId = normalizeSelectedProfileId(
+        suggestedProfileId ?? settings.defaultProfileId,
+      );
       formTitle.textContent = lookup.context.title;
       const sectionCount = getNamedSectionCount(lookup.context.fields);
       formMeta.textContent =
@@ -1768,7 +1880,12 @@ async function loadPopup(): Promise<void> {
       renderProfileSelect();
       applyProfile(state.selectedProfileId, false);
       renderPresetActions();
-      setStatus(message, "idle");
+      setStatus(
+        state.preset
+          ? `Loaded saved preset for this form. ${message}`
+          : message,
+        "idle",
+      );
       return;
     }
 
@@ -1784,8 +1901,12 @@ async function loadPopup(): Promise<void> {
   state.preset = preset;
   state.excludedFieldIds = new Set(preset?.excludedFieldIds ?? []);
 
-  const suggestedProfileId = settings.autoLoadMatchingProfile ? getSuggestedProfileId() : null;
-  state.selectedProfileId = normalizeSelectedProfileId(suggestedProfileId ?? settings.defaultProfileId);
+  const suggestedProfileId = settings.autoLoadMatchingProfile
+    ? getSuggestedProfileId()
+    : null;
+  state.selectedProfileId = normalizeSelectedProfileId(
+    suggestedProfileId ?? settings.defaultProfileId,
+  );
 
   formTitle.textContent = activeForm.title;
   const sectionCount = getNamedSectionCount(activeForm.fields);
@@ -1804,7 +1925,7 @@ async function loadPopup(): Promise<void> {
     preset
       ? "Loaded saved preset for this form. Review values before filling."
       : "",
-    "success",
+    "idle",
   );
 }
 
@@ -1813,8 +1934,16 @@ async function handleFill(): Promise<void> {
     return;
   }
 
-  if (state.confirmBeforeFill && !window.confirm("Fill the current Google Form with the reviewed values?")) {
+  if (
+    state.confirmBeforeFill &&
+    !window.confirm("Fill the current Google Form with the reviewed values?")
+  ) {
     return;
+  }
+
+  if (state.skippedFillFieldIds.length > 0) {
+    state.skippedFillFieldIds = [];
+    renderFields();
   }
 
   const localWarnings: string[] = [];
@@ -1850,7 +1979,8 @@ async function handleFill(): Promise<void> {
   const skippedLabels = result.skippedFieldIds.map(getFieldDisplayLabel);
   const skippedTypes = result.skippedFieldIds.map(getFieldType);
   const skippedAreOnlyDropdowns =
-    result.skippedFieldIds.length > 0 && skippedTypes.every((type) => type === "dropdown");
+    result.skippedFieldIds.length > 0 &&
+    skippedTypes.every((type) => type === "dropdown");
   const skippedSummary = skippedLabels.slice(0, 3).join(", ");
   const skippedSuffix =
     skippedLabels.length > 0
@@ -1933,8 +2063,12 @@ function handleClear(): void {
   }
 
   if (state.activeForm) {
-    state.clearedFieldIds = new Set(state.activeForm.fields.map((field) => field.id));
-    state.suppressedMappingFieldIds = new Set(state.activeForm.fields.map((field) => field.id));
+    state.clearedFieldIds = new Set(
+      state.activeForm.fields.map((field) => field.id),
+    );
+    state.suppressedMappingFieldIds = new Set(
+      state.activeForm.fields.map((field) => field.id),
+    );
   } else {
     state.clearedFieldIds.clear();
     state.suppressedMappingFieldIds.clear();
@@ -1998,13 +2132,21 @@ profileSelect.addEventListener("change", () => {
 
 resetPresetButton.addEventListener("click", () => {
   void handleResetPreset().catch((error) => {
-    setStatus(error instanceof Error ? error.message : "Unable to reset preset", "error");
+    setStatus(
+      error instanceof Error ? error.message : "Unable to reset preset",
+      "error",
+    );
   });
 });
 
 fillFormButton.addEventListener("click", () => {
   void handleFill().catch((error) => {
-    setStatus(error instanceof Error ? error.message : "Unable to fill the current form.", "error");
+    setStatus(
+      error instanceof Error
+        ? error.message
+        : "Unable to fill the current form.",
+      "error",
+    );
   });
 });
 
@@ -2012,7 +2154,10 @@ clearValuesButton.addEventListener("click", handleClear);
 
 openOptionsButton.addEventListener("click", () => {
   void runtimeOpenOptionsPage().catch((error) => {
-    setStatus(error instanceof Error ? error.message : "Unable to open options page", "error");
+    setStatus(
+      error instanceof Error ? error.message : "Unable to open options page",
+      "error",
+    );
   });
 });
 
@@ -2023,19 +2168,28 @@ window.addEventListener("pagehide", () => {
 window.addEventListener("keydown", (event) => {
   const target = event.target as HTMLElement | null;
   const isEditableTarget =
-    target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement;
 
   if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
     event.preventDefault();
     void handleFill().catch((error) => {
-      setStatus(error instanceof Error ? error.message : "Unable to fill the current form.", "error");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to fill the current form.",
+        "error",
+      );
     });
     return;
   }
 
   if (event.key === "/" && !isEditableTarget) {
     event.preventDefault();
-    const firstFieldControl = fieldsContainer.querySelector<HTMLElement>("input, textarea, select");
+    const firstFieldControl = fieldsContainer.querySelector<HTMLElement>(
+      "input, textarea, select",
+    );
     firstFieldControl?.focus();
   }
 });
@@ -2044,7 +2198,8 @@ if (!hasChromeRuntime()) {
   setStatus("Open this UI through the Chrome extension popup.", "error");
 } else {
   void loadPopup().catch((error) => {
-    const message = error instanceof Error ? error.message : "Failed to load popup";
+    const message =
+      error instanceof Error ? error.message : "Failed to load popup";
     setInvalidPageState("Unable to read this form", message);
     setStatus(message, "error");
   });

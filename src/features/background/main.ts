@@ -1,5 +1,4 @@
-import { scriptingExecuteScript, tabsQuery, tabsSendMessage } from "../../core/chrome-api";
-import { CONTENT_SCRIPT_VERSION } from "../../core/content-script-version";
+import { runtimeManifestVersion, scriptingExecuteScript, tabsQuery, tabsSendMessage } from "../../core/chrome-api";
 import {
   clearAllDataDirect,
   clearHistoryDirect,
@@ -62,9 +61,11 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function ensureContentScript(tabId: number): Promise<void> {
+  const expectedVersion = runtimeManifestVersion();
+
   try {
     const ping = await sendToTab<{ ready: boolean; version?: string }>(tabId, { type: "PING" });
-    if (ping?.ready && ping.version === CONTENT_SCRIPT_VERSION) {
+    if (ping?.ready && ping.version && expectedVersion && ping.version === expectedVersion) {
       return;
     }
 

@@ -1,6 +1,7 @@
 import { storageGet, storageSet } from "./chrome-api";
+import { isChoiceWithOtherValue, isValidDateValue, isValidTimeValue, looksLikePlaceholderOption, normalizeFieldValueForField } from "./field-value-normalization";
 import { DEFAULT_EXPORT_SELECTION, DEFAULT_SETTINGS } from "./types";
-import type { AppSettings, ExportSelection, FormHistoryEntry, FormPreset, ImportedAppData, Profile } from "./types";
+import type { AppSettings, DetectedField, ExportSelection, FieldValue, FormHistoryEntry, FormPreset, GridValue, ImportedAppData, Profile } from "./types";
 
 export const STORAGE_KEYS = {
   profiles: "profiles",
@@ -78,14 +79,6 @@ function isDetectedField(value: unknown): boolean {
   );
 }
 
-function isChoiceWithOtherValue(value: unknown): boolean {
-  if (!isStringRecord(value) || value.kind !== "choice_with_other" || typeof value.otherText !== "string") {
-    return false;
-  }
-
-  return typeof value.selected === "string" || (Array.isArray(value.selected) && value.selected.every((item) => typeof item === "string"));
-}
-
 function isFieldValue(value: unknown): boolean {
   return (
     value === null ||
@@ -131,6 +124,24 @@ function isProfile(value: unknown): value is Profile {
           (aliasList) => Array.isArray(aliasList) && aliasList.every((alias) => typeof alias === "string"),
         )))
   );
+}
+
+function normalizeProfile(profile: Profile): Profile {
+  const { aliases, ...rest } = profile;
+  const liveValueKeys = new Set(Object.keys(profile.values));
+  const normalizedAliases = aliases
+    ? Object.fromEntries(
+        Object.entries(aliases)
+          .filter(([key]) => liveValueKeys.has(key))
+          .map(([key, aliases]) => [key, Array.from(new Set(aliases.map((alias) => alias.trim()).filter(Boolean)))])
+          .filter(([, aliases]) => aliases.length > 0),
+      )
+    : undefined;
+
+  return {
+    ...rest,
+    ...(normalizedAliases && Object.keys(normalizedAliases).length > 0 ? { aliases: normalizedAliases } : {}),
+  };
 }
 
 function isPresetSectionSnapshot(value: unknown): boolean {
@@ -212,12 +223,27 @@ function normalizePreset(preset: FormPreset): FormPreset {
   const {
     mappings: rawMappings,
     unmappedFieldIds: rawUnmappedFieldIds,
-    excludedFieldIds,
-    sections,
+    excludedFieldIds: rawExcludedFieldIds,
+    sections: rawSections,
     mappingSchemaVersion,
+    values: rawValues,
     ...rest
   } = preset;
+  const activeFieldIds = rest.fields.length > 0 ? new Set(rest.fields.map((field) => field.id)) : null;
+  const activeFieldsById = activeFieldIds ? new Map(rest.fields.map((field) => [field.id, field])) : null;
   const mappings = rawMappings ? { ...rawMappings } : undefined;
+  const values = activeFieldIds
+    ? Object.fromEntries(
+        Object.entries(rawValues)
+          .filter(([fieldId]) => activeFieldIds.has(fieldId))
+          .map(([fieldId, value]) => {
+            const field = activeFieldsById?.get(fieldId);
+            const normalizedValue = field ? normalizePresetValueForField(field, value) : value;
+            return normalizedValue === undefined ? null : ([fieldId, normalizedValue] as const);
+          })
+          .filter((entry): entry is readonly [string, FieldValue] => Boolean(entry)),
+      )
+    : rawValues;
   const unmappedFieldIds = new Set(rawUnmappedFieldIds ?? []);
 
   if (mappingSchemaVersion !== 2 && mappings) {
@@ -230,15 +256,50 @@ function normalizePreset(preset: FormPreset): FormPreset {
   }
 
   const normalizedUnmappedFieldIds = Array.from(unmappedFieldIds);
+  const normalizedMappings =
+    mappings
+      ? Object.fromEntries(Object.entries(mappings).filter(([fieldId]) => !activeFieldIds || activeFieldIds.has(fieldId)))
+      : undefined;
+  const normalizedUnmappedFieldIdsInSchema = activeFieldIds
+    ? normalizedUnmappedFieldIds.filter((fieldId) => activeFieldIds.has(fieldId))
+    : normalizedUnmappedFieldIds;
+  const normalizedExcludedFieldIds = activeFieldIds
+    ? rawExcludedFieldIds?.filter((fieldId) => activeFieldIds.has(fieldId))
+    : rawExcludedFieldIds;
+  const normalizedSections = rawSections
+    ? Array.from(
+        rawSections
+          .map((section) => ({
+            ...section,
+            fieldIds: activeFieldIds ? section.fieldIds.filter((fieldId) => activeFieldIds.has(fieldId)) : section.fieldIds,
+          }))
+          .filter((section) => section.fieldIds.length > 0)
+          .reduce<Map<string, (typeof rawSections)[number]>>((map, section) => {
+            const previous = map.get(section.id);
+            if (!previous || section.updatedAt >= previous.updatedAt) {
+              map.set(section.id, section);
+            }
+            return map;
+          }, new Map())
+          .values(),
+      )
+    : undefined;
 
   return {
     ...rest,
-    ...(mappings && Object.keys(mappings).length ? { mappings } : {}),
-    ...(normalizedUnmappedFieldIds.length ? { unmappedFieldIds: normalizedUnmappedFieldIds } : {}),
-    ...(excludedFieldIds?.length ? { excludedFieldIds: Array.from(new Set(excludedFieldIds)) } : {}),
-    ...(sections?.length ? { sections: sections.map((section) => ({ ...section, fieldIds: Array.from(new Set(section.fieldIds)) })) } : {}),
+    values,
+    ...(normalizedMappings && Object.keys(normalizedMappings).length ? { mappings: normalizedMappings } : {}),
+    ...(normalizedUnmappedFieldIdsInSchema.length ? { unmappedFieldIds: normalizedUnmappedFieldIdsInSchema } : {}),
+    ...(normalizedExcludedFieldIds?.length ? { excludedFieldIds: Array.from(new Set(normalizedExcludedFieldIds)) } : {}),
+    ...(normalizedSections?.length
+      ? { sections: normalizedSections.map((section) => ({ ...section, fieldIds: Array.from(new Set(section.fieldIds)) })) }
+      : {}),
     ...(mappingSchemaVersion === 2 ? { mappingSchemaVersion } : {}),
   };
+}
+
+function normalizePresetValueForField(field: DetectedField, value: FieldValue): FieldValue | undefined {
+  return normalizeFieldValueForField(field, value);
 }
 
 function normalizePresetCollection(presets: FormPreset[]): FormPreset[] {
@@ -246,7 +307,7 @@ function normalizePresetCollection(presets: FormPreset[]): FormPreset[] {
 
   for (const preset of presets.filter(isFormPreset).map(normalizePreset)) {
     const previous = latestByFormKey.get(preset.formKey);
-    if (!previous || preset.updatedAt > previous.updatedAt) {
+    if (!previous || preset.updatedAt >= previous.updatedAt) {
       latestByFormKey.set(preset.formKey, preset);
     }
   }
@@ -254,8 +315,30 @@ function normalizePresetCollection(presets: FormPreset[]): FormPreset[] {
   return Array.from(latestByFormKey.values());
 }
 
+function normalizeProfileCollection(profiles: Profile[]): Profile[] {
+  const latestById = new Map<string, Profile>();
+
+  for (const profile of profiles.filter(isProfile).map(normalizeProfile)) {
+    const previous = latestById.get(profile.id);
+    if (!previous || profile.updatedAt >= previous.updatedAt) {
+      latestById.set(profile.id, profile);
+    }
+  }
+
+  return Array.from(latestById.values());
+}
+
 function normalizeHistoryEntries(history: FormHistoryEntry[]): FormHistoryEntry[] {
-  return [...history]
+  const latestByFormKey = new Map<string, FormHistoryEntry>();
+
+  for (const entry of history.filter(isFormHistoryEntry)) {
+    const previous = latestByFormKey.get(entry.formKey);
+    if (!previous || entry.lastFilledAt >= previous.lastFilledAt) {
+      latestByFormKey.set(entry.formKey, entry);
+    }
+  }
+
+  return Array.from(latestByFormKey.values())
     .sort((left, right) => right.lastFilledAt - left.lastFilledAt)
     .slice(0, MAX_HISTORY_ENTRIES);
 }
@@ -271,7 +354,7 @@ function normalizeSettings(settings: AppSettings | undefined, profiles: Profile[
 
 export async function readProfilesDirect(): Promise<Profile[]> {
   const result = await storageGet<StorageShape>([STORAGE_KEYS.profiles]);
-  return Array.isArray(result.profiles) ? result.profiles.filter(isProfile) : [];
+  return Array.isArray(result.profiles) ? normalizeProfileCollection(result.profiles) : [];
 }
 
 export async function readPresetsDirect(): Promise<FormPreset[]> {
@@ -281,7 +364,7 @@ export async function readPresetsDirect(): Promise<FormPreset[]> {
 
 export async function readHistoryDirect(): Promise<FormHistoryEntry[]> {
   const result = await storageGet<StorageShape>([STORAGE_KEYS.history]);
-  return Array.isArray(result.history) ? normalizeHistoryEntries(result.history.filter(isFormHistoryEntry)) : [];
+  return Array.isArray(result.history) ? normalizeHistoryEntries(result.history) : [];
 }
 
 export async function readSettingsDirect(): Promise<AppSettings> {
@@ -294,11 +377,11 @@ export async function readSettingsDirect(): Promise<AppSettings> {
 
 export async function readAllDirect(): Promise<Required<StorageShape>> {
   const result = await storageGet<StorageShape>(Object.values(STORAGE_KEYS));
-  const profiles = Array.isArray(result.profiles) ? result.profiles.filter(isProfile) : [];
+  const profiles = Array.isArray(result.profiles) ? normalizeProfileCollection(result.profiles) : [];
   return {
     profiles,
     presets: Array.isArray(result.presets) ? normalizePresetCollection(result.presets) : [],
-    history: Array.isArray(result.history) ? normalizeHistoryEntries(result.history.filter(isFormHistoryEntry)) : [],
+    history: Array.isArray(result.history) ? normalizeHistoryEntries(result.history) : [],
     settings: normalizeSettings(isAppSettings(result.settings) ? result.settings : undefined, profiles),
   };
 }
@@ -317,7 +400,7 @@ export async function saveProfileDirect(profile: Profile): Promise<void> {
     profiles.push(profile);
   }
 
-  await storageSet({ [STORAGE_KEYS.profiles]: profiles });
+  await storageSet({ [STORAGE_KEYS.profiles]: normalizeProfileCollection(profiles) });
 }
 
 export async function deleteProfileDirect(profileId: string): Promise<void> {
@@ -358,7 +441,10 @@ export async function deletePresetDirect(presetId: string): Promise<void> {
 }
 
 export async function saveSettingsDirect(settings: AppSettings): Promise<void> {
-  await storageSet({ [STORAGE_KEYS.settings]: settings });
+  const profiles = await readProfilesDirect();
+  await storageSet({
+    [STORAGE_KEYS.settings]: normalizeSettings(settings, profiles),
+  });
 }
 
 export async function saveHistoryEntryDirect(entry: FormHistoryEntry): Promise<void> {
@@ -393,13 +479,13 @@ export async function importAppDataDirect(payload: ImportedAppData): Promise<voi
   }
 
   const currentState = await readAllDirect();
-  const nextProfiles = Array.isArray(payload.profiles) ? payload.profiles : currentState.profiles;
+  const nextProfiles = Array.isArray(payload.profiles) ? normalizeProfileCollection(payload.profiles) : currentState.profiles;
   const nextPresets = Array.isArray(payload.presets) ? normalizePresetCollection(payload.presets) : currentState.presets;
   const nextHistory = Array.isArray(payload.history) ? normalizeHistoryEntries(payload.history) : currentState.history;
   await writeAllDirect({
     profiles: nextProfiles,
     presets: nextPresets,
     history: nextHistory,
-    settings: payload.settings ? { ...DEFAULT_SETTINGS, ...payload.settings } : currentState.settings,
+    settings: normalizeSettings(payload.settings ? { ...DEFAULT_SETTINGS, ...payload.settings } : currentState.settings, nextProfiles),
   });
 }

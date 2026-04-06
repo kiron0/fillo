@@ -11,6 +11,7 @@ type FieldDescriptor = {
 
 type FieldIdentity = {
   normalizedLabel: string;
+  type: FieldType;
   sectionTitle?: string;
   helpText?: string;
 };
@@ -751,11 +752,12 @@ function extractGridDefinition(
       const label = extractGridRowLabel(row);
       const rowHeader = row.querySelector<HTMLElement>('[role="rowheader"]');
       const id =
-        row.getAttribute("data-row-id") ??
-        row.id ??
-        rowHeader?.getAttribute("data-row-id") ??
-        rowHeader?.id ??
-        `row-${index}`;
+        [
+          row.getAttribute("data-row-id"),
+          row.id,
+          rowHeader?.getAttribute("data-row-id"),
+          rowHeader?.id,
+        ].find((candidate) => typeof candidate === "string" && candidate.trim().length > 0) ?? `row-${index}`;
       return label ? { id, label, controls, mode: radios.length > 0 ? "radio" as const : "checkbox" as const } : null;
     })
     .filter((row): row is { id: string; label: string; controls: HTMLElement[]; mode: "radio" | "checkbox" } => Boolean(row));
@@ -1420,6 +1422,10 @@ function fillGridField(container: HTMLElement, field: DetectedField, value: Fiel
     const rowValue = value.rows[rowKey] ?? value.rows[rowLabel];
     const columnLabels: string[] = field.options ?? [];
 
+    if (rowValue === undefined || rowValue === null) {
+      continue;
+    }
+
     if (field.gridMode === "radio") {
       if (typeof rowValue !== "string") {
         continue;
@@ -1847,16 +1853,17 @@ async function selectPopupOptionWithKeyboard(control: HTMLElement, candidates: H
   return targetOption ? didPopupSelectionCommit(control, targetOption, value) : false;
 }
 
-function buildFieldIdentity(field: Pick<DetectedField, "normalizedLabel" | "sectionTitle" | "helpText">): FieldIdentity {
+function buildFieldIdentity(field: Pick<DetectedField, "normalizedLabel" | "type" | "sectionTitle" | "helpText">): FieldIdentity {
   return {
     normalizedLabel: field.normalizedLabel,
+    type: field.type,
     sectionTitle: field.sectionTitle ? normalizeText(field.sectionTitle) : undefined,
     helpText: field.helpText ? normalizeText(field.helpText) : undefined,
   };
 }
 
 function fieldIdentityScore(left: FieldIdentity, right: FieldIdentity): number {
-  if (left.normalizedLabel !== right.normalizedLabel) {
+  if (left.normalizedLabel !== right.normalizedLabel || left.type !== right.type) {
     return -1;
   }
 
@@ -1911,7 +1918,9 @@ function findDescriptorByField(root: Document, field: DetectedField, referenceFi
 
   if (bestScore === 2) {
     const sameLabelDescriptors = descriptors.filter(
-      (descriptor) => descriptor.field.normalizedLabel === referenceIdentity.normalizedLabel,
+      (descriptor) =>
+        descriptor.field.normalizedLabel === referenceIdentity.normalizedLabel &&
+        descriptor.field.type === referenceIdentity.type,
     );
     const ordinal = getDuplicateLabelOrdinal(referenceFields, field);
     return sameLabelDescriptors[ordinal] ?? bestMatch;

@@ -96,6 +96,14 @@ export function runtimeOpenOptionsPage(): Promise<void> {
   });
 }
 
+export function runtimeManifestVersion(): string | null {
+  if (!hasChromeRuntime() || typeof chrome.runtime.getManifest !== "function") {
+    return null;
+  }
+
+  return chrome.runtime.getManifest().version ?? null;
+}
+
 export function tabsQuery(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]> {
   return new Promise((resolve, reject) => {
     if (typeof chrome === "undefined" || !chrome.tabs?.query) {

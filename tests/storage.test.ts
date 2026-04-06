@@ -1,6 +1,7 @@
 import {
   clearAllData,
   exportAppData,
+  getFormHistory,
   getPresetByFormKey,
   getProfiles,
   getSettings,
@@ -434,6 +435,153 @@ describe("storage", () => {
     expect(exported.history?.[24]?.id).toBe("history-6");
   });
 
+  it("deduplicates stored history by form key and keeps the newest entry", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.history = [
+      {
+        id: "history-old",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-1",
+        lastFilledAt: 1,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-new",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-2",
+        lastFilledAt: 2,
+        filledFieldCount: 2,
+        skippedFieldCount: 1,
+      },
+      {
+        id: "history-other",
+        formKey: "form-2",
+        formTitle: "Form 2",
+        lastUsedProfileId: null,
+        lastFilledAt: 3,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+    ];
+
+    expect(await getFormHistory()).toEqual([
+      {
+        id: "history-other",
+        formKey: "form-2",
+        formTitle: "Form 2",
+        lastUsedProfileId: null,
+        lastFilledAt: 3,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-new",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-2",
+        lastFilledAt: 2,
+        filledFieldCount: 2,
+        skippedFieldCount: 1,
+      },
+    ]);
+  });
+
+  it("prefers later duplicates when preset/profile/history timestamps are equal", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.profiles = [
+      {
+        id: "profile-1",
+        name: "First Profile",
+        values: { fullName: "Old" },
+        createdAt: 1,
+        updatedAt: 10,
+      },
+      {
+        id: "profile-1",
+        name: "Second Profile",
+        values: { fullName: "New" },
+        createdAt: 1,
+        updatedAt: 10,
+      },
+    ];
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "First Preset",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+        values: { full_name: "Old" },
+        createdAt: 1,
+        updatedAt: 10,
+      },
+      {
+        id: "preset-2",
+        name: "Second Preset",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+        values: { full_name: "New" },
+        createdAt: 1,
+        updatedAt: 10,
+      },
+    ];
+    chromeWithState.state.history = [
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-1",
+        lastFilledAt: 10,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-2",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-2",
+        lastFilledAt: 10,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ];
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Second Profile",
+        values: { fullName: "New" },
+        createdAt: 1,
+        updatedAt: 10,
+      },
+    ]);
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-2",
+      name: "Second Preset",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+      values: { full_name: "New" },
+      createdAt: 1,
+      updatedAt: 10,
+    });
+    expect(await getFormHistory()).toEqual([
+      {
+        id: "history-2",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-2",
+        lastFilledAt: 10,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ]);
+  });
+
   it("rejects imported presets with invalid field grid metadata", async () => {
     await expect(
       importAppData({
@@ -742,6 +890,1285 @@ describe("storage", () => {
       autoLoadMatchingProfile: true,
       confirmBeforeFill: true,
       showBackupSection: false,
+    });
+  });
+
+  it("normalizes stale default profile ids on settings save too", async () => {
+    await saveProfile({
+      id: "profile-1",
+      name: "Valid",
+      values: { fullName: "Toufiq Hasan" },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    await saveSettings({
+      defaultProfileId: "missing-profile",
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+
+    expect(await getSettings()).toEqual({
+      defaultProfileId: null,
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.settings).toEqual({
+      defaultProfileId: null,
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+  });
+
+  it("deduplicates stored profiles by id and keeps the newest one", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.profiles = [
+      {
+        id: "profile-1",
+        name: "Old Profile",
+        values: { fullName: "Old" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-1",
+        name: "New Profile",
+        values: { fullName: "New" },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+    chromeWithState.state.settings = {
+      defaultProfileId: "profile-1",
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    };
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "New Profile",
+        values: { fullName: "New" },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ]);
+
+    const exported = await exportAppData();
+    expect(exported.profiles).toEqual([
+      {
+        id: "profile-1",
+        name: "New Profile",
+        values: { fullName: "New" },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ]);
+    expect(exported.settings).toEqual({
+      defaultProfileId: "profile-1",
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+  });
+
+  it("normalizes stored profile aliases by trimming blanks and duplicates", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.profiles = [
+      {
+        id: "profile-1",
+        name: "Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: {
+          fullName: [" Full Name ", "", "Full Name", "Legal Name", "Legal Name"],
+          email: ["", "   "],
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: {
+          fullName: ["Full Name", "Legal Name"],
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+
+    const exported = await exportAppData();
+    expect(exported.profiles).toEqual([
+      {
+        id: "profile-1",
+        name: "Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: {
+          fullName: ["Full Name", "Legal Name"],
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("drops alias maps that become empty after normalization", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.profiles = [
+      {
+        id: "profile-1",
+        name: "Empty Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: {
+          fullName: ["", "   "],
+          email: [" "],
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Empty Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+
+    const exported = await exportAppData();
+    expect(exported.profiles).toEqual([
+      {
+        id: "profile-1",
+        name: "Empty Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("drops aliases for profile keys that no longer exist", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.profiles = [
+      {
+        id: "profile-1",
+        name: "Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: {
+          fullName: ["Full Name"],
+          email: ["Email Address"],
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: {
+          fullName: ["Full Name"],
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+
+    const exported = await exportAppData();
+    expect(exported.profiles).toEqual([
+      {
+        id: "profile-1",
+        name: "Alias Profile",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: {
+          fullName: ["Full Name"],
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("deduplicates imported profiles by id before writing settings", async () => {
+    await importAppData({
+      version: 1,
+      profiles: [
+        {
+          id: "profile-1",
+          name: "Older Imported",
+          values: { fullName: "Old" },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: "profile-1",
+          name: "Newer Imported",
+          values: { fullName: "New" },
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Newer Imported",
+        values: { fullName: "New" },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ]);
+    expect(await getSettings()).toEqual({
+      defaultProfileId: "profile-1",
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+  });
+
+  it("deduplicates imported history by form key before export", async () => {
+    await importAppData({
+      version: 1,
+      history: [
+        {
+          id: "history-old",
+          formKey: "form-1",
+          formTitle: "Form 1",
+          lastUsedProfileId: "profile-1",
+          lastFilledAt: 1,
+          filledFieldCount: 1,
+          skippedFieldCount: 0,
+        },
+        {
+          id: "history-new",
+          formKey: "form-1",
+          formTitle: "Form 1",
+          lastUsedProfileId: "profile-2",
+          lastFilledAt: 5,
+          filledFieldCount: 2,
+          skippedFieldCount: 0,
+        },
+      ],
+    });
+
+    expect(await getFormHistory()).toEqual([
+      {
+        id: "history-new",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-2",
+        lastFilledAt: 5,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ]);
+
+    const exported = await exportAppData();
+    expect(exported.history).toEqual([
+      {
+        id: "history-new",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: "profile-2",
+        lastFilledAt: 5,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ]);
+  });
+
+  it("drops stale preset metadata for fields that are no longer present", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Registration",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+        values: { full_name: "Toufiq", old_field: "stale@example.com" },
+        mappings: { full_name: "fullName", old_field: "email" },
+        unmappedFieldIds: ["old_field"],
+        excludedFieldIds: ["old_field"],
+        sections: [{ id: "section-1", title: "Section", fieldIds: ["full_name", "old_field"], updatedAt: 1 }],
+        mappingSchemaVersion: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Registration",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+      values: { full_name: "Toufiq" },
+      mappings: { full_name: "fullName" },
+      sections: [{ id: "section-1", title: "Section", fieldIds: ["full_name"], updatedAt: 1 }],
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Registration",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+        values: { full_name: "Toufiq" },
+        mappings: { full_name: "fullName" },
+        sections: [{ id: "section-1", title: "Section", fieldIds: ["full_name"], updatedAt: 1 }],
+        mappingSchemaVersion: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("deduplicates preset sections by section id and keeps the newest snapshot", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Registration",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+        values: { full_name: "Toufiq" },
+        sections: [
+          { id: "section-1", title: "Old Title", fieldIds: ["full_name"], updatedAt: 1 },
+          { id: "section-1", title: "New Title", fieldIds: ["full_name", "full_name"], updatedAt: 2 },
+        ],
+        mappingSchemaVersion: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Registration",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+      values: { full_name: "Toufiq" },
+      sections: [{ id: "section-1", title: "New Title", fieldIds: ["full_name"], updatedAt: 2 }],
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Registration",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+        values: { full_name: "Toufiq" },
+        sections: [{ id: "section-1", title: "New Title", fieldIds: ["full_name"], updatedAt: 2 }],
+        mappingSchemaVersion: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("prefers the later section snapshot when duplicate section ids share the same updatedAt", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Registration",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+        values: { full_name: "Toufiq" },
+        sections: [
+          { id: "section-1", title: "First Title", fieldIds: ["full_name"], updatedAt: 2 },
+          { id: "section-1", title: "Second Title", fieldIds: ["full_name"], updatedAt: 2 },
+        ],
+        mappingSchemaVersion: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Registration",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [{ id: "full_name", label: "Full Name", normalizedLabel: "full name", type: "text", required: true }],
+      values: { full_name: "Toufiq" },
+      sections: [{ id: "section-1", title: "Second Title", fieldIds: ["full_name"], updatedAt: 2 }],
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+  });
+
+  it("normalizes stored grid preset values to current row ids and valid options", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Availability",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "availability",
+            label: "Availability",
+            normalizedLabel: "availability",
+            type: "grid",
+            required: false,
+            options: ["Morning", "Evening"],
+            gridRows: ["Monday", "Tuesday"],
+            gridRowIds: ["mon", "tue"],
+            gridMode: "checkbox",
+          },
+        ],
+        values: {
+          availability: {
+            kind: "grid",
+            rows: {
+              mon: ["Morning", "Invalid"],
+              Tuesday: ["Evening"],
+              stale_row: ["Morning"],
+            },
+          },
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Availability",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "availability",
+          label: "Availability",
+          normalizedLabel: "availability",
+          type: "grid",
+          required: false,
+          options: ["Morning", "Evening"],
+          gridRows: ["Monday", "Tuesday"],
+          gridRowIds: ["mon", "tue"],
+          gridMode: "checkbox",
+        },
+      ],
+      values: {
+        availability: {
+          kind: "grid",
+          rows: {
+            mon: ["Morning"],
+            tue: ["Evening"],
+          },
+        },
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Availability",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "availability",
+            label: "Availability",
+            normalizedLabel: "availability",
+            type: "grid",
+            required: false,
+            options: ["Morning", "Evening"],
+            gridRows: ["Monday", "Tuesday"],
+            gridRowIds: ["mon", "tue"],
+            gridMode: "checkbox",
+          },
+        ],
+        values: {
+          availability: {
+            kind: "grid",
+            rows: {
+              mon: ["Morning"],
+              tue: ["Evening"],
+            },
+          },
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("normalizes stored choice-with-other preset values to current options", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Choices",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "department",
+            label: "Department",
+            normalizedLabel: "department",
+            type: "radio",
+            required: false,
+            options: ["CSE", "Other"],
+            otherOption: "Other",
+          },
+          {
+            id: "topics",
+            label: "Topics",
+            normalizedLabel: "topics",
+            type: "checkbox",
+            required: false,
+            options: ["Math", "Other", "Physics"],
+            otherOption: "Other",
+          },
+        ],
+        values: {
+          department: {
+            kind: "choice_with_other",
+            selected: "Other",
+            otherText: "  AI  ",
+          },
+          topics: {
+            kind: "choice_with_other",
+            selected: ["Math", "Other", "Invalid"],
+            otherText: "   ",
+          },
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Choices",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "radio",
+          required: false,
+          options: ["CSE", "Other"],
+          otherOption: "Other",
+        },
+        {
+          id: "topics",
+          label: "Topics",
+          normalizedLabel: "topics",
+          type: "checkbox",
+          required: false,
+          options: ["Math", "Other", "Physics"],
+          otherOption: "Other",
+        },
+      ],
+      values: {
+        department: {
+          kind: "choice_with_other",
+          selected: "Other",
+          otherText: "AI",
+        },
+        topics: {
+          kind: "choice_with_other",
+          selected: ["Math", "Other"],
+          otherText: "Invalid",
+        },
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Choices",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "department",
+            label: "Department",
+            normalizedLabel: "department",
+            type: "radio",
+            required: false,
+            options: ["CSE", "Other"],
+            otherOption: "Other",
+          },
+          {
+            id: "topics",
+            label: "Topics",
+            normalizedLabel: "topics",
+            type: "checkbox",
+            required: false,
+            options: ["Math", "Other", "Physics"],
+            otherOption: "Other",
+          },
+        ],
+        values: {
+          department: {
+            kind: "choice_with_other",
+            selected: "Other",
+            otherText: "AI",
+          },
+          topics: {
+            kind: "choice_with_other",
+            selected: ["Math", "Other"],
+            otherText: "Invalid",
+          },
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("normalizes stored plain checkbox preset values to current options", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Topics",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "topics",
+            label: "Topics",
+            normalizedLabel: "topics",
+            type: "checkbox",
+            required: false,
+            options: ["Math", "Other", "Physics"],
+            otherOption: "Other",
+          },
+        ],
+        values: {
+          topics: [" Math ", "Invalid", "Other"],
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Topics",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "topics",
+          label: "Topics",
+          normalizedLabel: "topics",
+          type: "checkbox",
+          required: false,
+          options: ["Math", "Other", "Physics"],
+          otherOption: "Other",
+        },
+      ],
+      values: {
+        topics: {
+          kind: "choice_with_other",
+          selected: ["Math", "Other"],
+          otherText: "Invalid",
+        },
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Topics",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "topics",
+            label: "Topics",
+            normalizedLabel: "topics",
+            type: "checkbox",
+            required: false,
+            options: ["Math", "Other", "Physics"],
+            otherOption: "Other",
+          },
+        ],
+        values: {
+          topics: {
+            kind: "choice_with_other",
+            selected: ["Math", "Other"],
+            otherText: "Invalid",
+          },
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("normalizes stored plain option preset values to current options", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Options",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "department",
+            label: "Department",
+            normalizedLabel: "department",
+            type: "radio",
+            required: false,
+            options: ["CSE", "EEE"],
+          },
+          {
+            id: "batch",
+            label: "Batch",
+            normalizedLabel: "batch",
+            type: "dropdown",
+            required: false,
+            options: ["47", "48"],
+          },
+          {
+            id: "rating",
+            label: "Rating",
+            normalizedLabel: "rating",
+            type: "scale",
+            required: false,
+            options: ["1", "2", "3"],
+          },
+        ],
+        values: {
+          department: "Invalid",
+          batch: "48",
+          rating: "9",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Options",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "radio",
+          required: false,
+          options: ["CSE", "EEE"],
+        },
+        {
+          id: "batch",
+          label: "Batch",
+          normalizedLabel: "batch",
+          type: "dropdown",
+          required: false,
+          options: ["47", "48"],
+        },
+        {
+          id: "rating",
+          label: "Rating",
+          normalizedLabel: "rating",
+          type: "scale",
+          required: false,
+          options: ["1", "2", "3"],
+        },
+      ],
+      values: {
+        batch: "48",
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Options",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "department",
+            label: "Department",
+            normalizedLabel: "department",
+            type: "radio",
+            required: false,
+            options: ["CSE", "EEE"],
+          },
+          {
+            id: "batch",
+            label: "Batch",
+            normalizedLabel: "batch",
+            type: "dropdown",
+            required: false,
+            options: ["47", "48"],
+          },
+          {
+            id: "rating",
+            label: "Rating",
+            normalizedLabel: "rating",
+            type: "scale",
+            required: false,
+            options: ["1", "2", "3"],
+          },
+        ],
+        values: {
+          batch: "48",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("drops placeholder dropdown fallback values when no real options are available", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Dropdowns",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "department",
+            label: "Department",
+            normalizedLabel: "department",
+            type: "dropdown",
+            required: false,
+            options: [],
+          },
+          {
+            id: "batch",
+            label: "Batch",
+            normalizedLabel: "batch",
+            type: "dropdown",
+            required: false,
+            options: [],
+          },
+        ],
+        values: {
+          department: "Select an option",
+          batch: "48th",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Dropdowns",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "department",
+          label: "Department",
+          normalizedLabel: "department",
+          type: "dropdown",
+          required: false,
+          options: [],
+        },
+        {
+          id: "batch",
+          label: "Batch",
+          normalizedLabel: "batch",
+          type: "dropdown",
+          required: false,
+          options: [],
+        },
+      ],
+      values: {
+        batch: "48th",
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Dropdowns",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "department",
+            label: "Department",
+            normalizedLabel: "department",
+            type: "dropdown",
+            required: false,
+            options: [],
+          },
+          {
+            id: "batch",
+            label: "Batch",
+            normalizedLabel: "batch",
+            type: "dropdown",
+            required: false,
+            options: [],
+          },
+        ],
+        values: {
+          batch: "48th",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("drops invalid stored date and time preset values", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Schedule",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "birthday",
+            label: "Birthday",
+            normalizedLabel: "birthday",
+            type: "date",
+            required: false,
+          },
+          {
+            id: "meeting_time",
+            label: "Meeting Time",
+            normalizedLabel: "meeting time",
+            type: "time",
+            required: false,
+          },
+        ],
+        values: {
+          birthday: "2025-02-30",
+          meeting_time: "25:61",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Schedule",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "birthday",
+          label: "Birthday",
+          normalizedLabel: "birthday",
+          type: "date",
+          required: false,
+        },
+        {
+          id: "meeting_time",
+          label: "Meeting Time",
+          normalizedLabel: "meeting time",
+          type: "time",
+          required: false,
+        },
+      ],
+      values: {},
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Schedule",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "birthday",
+            label: "Birthday",
+            normalizedLabel: "birthday",
+            type: "date",
+            required: false,
+          },
+          {
+            id: "meeting_time",
+            label: "Meeting Time",
+            normalizedLabel: "meeting time",
+            type: "time",
+            required: false,
+          },
+        ],
+        values: {},
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("drops whitespace-only stored text preset values", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Text Fields",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "full_name",
+            label: "Full Name",
+            normalizedLabel: "full name",
+            type: "text",
+            required: false,
+          },
+          {
+            id: "essay",
+            label: "Essay",
+            normalizedLabel: "essay",
+            type: "textarea",
+            required: false,
+          },
+        ],
+        values: {
+          full_name: "   ",
+          essay: "Actual text",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Text Fields",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: false,
+        },
+        {
+          id: "essay",
+          label: "Essay",
+          normalizedLabel: "essay",
+          type: "textarea",
+          required: false,
+        },
+      ],
+      values: {
+        essay: "Actual text",
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Text Fields",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "full_name",
+            label: "Full Name",
+            normalizedLabel: "full name",
+            type: "text",
+            required: false,
+          },
+          {
+            id: "essay",
+            label: "Essay",
+            normalizedLabel: "essay",
+            type: "textarea",
+            required: false,
+          },
+        ],
+        values: {
+          essay: "Actual text",
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("drops non-string stored text preset values", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Text Fields",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "full_name",
+            label: "Full Name",
+            normalizedLabel: "full name",
+            type: "text",
+            required: false,
+          },
+        ],
+        values: {
+          full_name: true,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Text Fields",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: false,
+        },
+      ],
+      values: {},
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "Text Fields",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "full_name",
+            label: "Full Name",
+            normalizedLabel: "full name",
+            type: "text",
+            required: false,
+          },
+        ],
+        values: {},
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("normalizes numeric stored text preset values to strings", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Text Fields",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [
+          {
+            id: "student_id",
+            label: "Student ID",
+            normalizedLabel: "student id",
+            type: "text",
+            required: false,
+          },
+        ],
+        values: {
+          student_id: 12345,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Text Fields",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [
+        {
+          id: "student_id",
+          label: "Student ID",
+          normalizedLabel: "student id",
+          type: "text",
+          required: false,
+        },
+      ],
+      values: {
+        student_id: "12345",
+      },
+      createdAt: 1,
+      updatedAt: 1,
     });
   });
 

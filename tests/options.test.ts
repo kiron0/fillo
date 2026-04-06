@@ -268,6 +268,36 @@ describe("options", () => {
     expect(document.querySelector(".card .profile-meta")?.textContent).toContain("saved value");
   });
 
+  it("restores normalized settings after saving a stale default profile selection", async () => {
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const defaultProfileSelect = document.querySelector<HTMLSelectElement>("#default-profile")!;
+    const staleOption = document.createElement("option");
+    staleOption.value = "missing-profile";
+    staleOption.textContent = "Missing Profile";
+    defaultProfileSelect.append(staleOption);
+    defaultProfileSelect.value = "missing-profile";
+    defaultProfileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+
+    await vi.waitFor(() => {
+      expect((mock.state.settings as Record<string, unknown>).defaultProfileId).toBeNull();
+      expect(defaultProfileSelect.value).toBe("");
+    });
+  });
+
   it("keeps the first existing profile meta after adding another profile", async () => {
     const profiles: Profile[] = [
       {
@@ -393,6 +423,71 @@ describe("options", () => {
     await vi.waitFor(() => {
       expect(document.querySelector<HTMLParagraphElement>("#status")!.textContent).toBe("Disk full");
     });
+  });
+
+  it("refreshes a saved profile card from normalized storage state", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Personal",
+        values: { fullName: "Toufiq Hasan" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    const card = document.querySelector<HTMLElement>('[data-profile-id="profile-1"]')!;
+    const aliasInput = card.querySelector<HTMLInputElement>('input[placeholder="Aliases"]')!;
+    aliasInput.value = " Full Name , , Full Name , Old Email ";
+    aliasInput.dispatchEvent(new Event("input", { bubbles: true }));
+
+    const addFieldButton = card.querySelector<HTMLButtonElement>(".card-actions button")!;
+    addFieldButton.click();
+
+    const rows = Array.from(card.querySelectorAll<HTMLElement>(".value-row"));
+    const newRow = rows[rows.length - 1]!;
+    const newKeyInput = newRow.querySelector<HTMLInputElement>("input")!;
+    const newAliasInput = newRow.querySelector<HTMLInputElement>('input[placeholder="Aliases"]')!;
+    newKeyInput.value = "email";
+    newKeyInput.dispatchEvent(new Event("input", { bubbles: true }));
+    newAliasInput.value = " Email Address ";
+    newAliasInput.dispatchEvent(new Event("input", { bubbles: true }));
+    newRow.remove();
+
+    const saveButton = card.querySelector<HTMLButtonElement>(".button.accent")!;
+    saveButton.click();
+
+    await vi.waitFor(() => {
+      expect((mock.state.profiles as Profile[])[0]).toEqual({
+        id: "profile-1",
+        name: "Personal",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: {
+          fullName: ["Full Name", "Old Email"],
+        },
+        createdAt: 1,
+        updatedAt: expect.any(Number),
+      });
+    });
+
+    const refreshedCard = document.querySelector<HTMLElement>('[data-profile-id="profile-1"]')!;
+    const refreshedAliasInput = refreshedCard.querySelector<HTMLInputElement>('input[placeholder="Aliases"]')!;
+    expect(refreshedAliasInput.value).toBe("Full Name, Old Email");
   });
 
   it("rejects backup payloads without version 1", async () => {

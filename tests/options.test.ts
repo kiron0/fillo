@@ -426,7 +426,7 @@ describe("options", () => {
     document.querySelector<HTMLButtonElement>("#import-data")!.click();
     await vi.waitFor(() => {
       expect(document.querySelector<HTMLParagraphElement>("#status")!.textContent).toBe(
-        "Import payload must be a valid version 1 backup with well-formed profiles, presets, and settings.",
+        "Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.",
       );
     });
   });
@@ -463,7 +463,7 @@ describe("options", () => {
     document.querySelector<HTMLButtonElement>("#import-data")!.click();
     await vi.waitFor(() => {
       expect(document.querySelector<HTMLParagraphElement>("#status")!.textContent).toBe(
-        "Import payload must be a valid version 1 backup with well-formed profiles, presets, and settings.",
+        "Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.",
       );
     });
   });

@@ -4165,4 +4165,493 @@ describe("popup", () => {
 
     expect(document.querySelector(".badge.warning")?.textContent).toBe("Enter a valid URL.");
   });
+
+  it("updates required and invalid text-field badges live while typing", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "live-validation-form",
+      fields: [
+        {
+          id: "email",
+          label: "Email",
+          normalizedLabel: "email",
+          type: "text",
+          required: true,
+          textSubtype: "email",
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const card = document.querySelector<HTMLElement>('[data-field-id="email"]')!;
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+
+    expect(card.dataset.reviewState).toBe("warning");
+    expect(Array.from(card.querySelectorAll(".badge.warning")).map((node) => node.textContent)).toEqual(["Needs value"]);
+
+    input.value = "invalid";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(card.dataset.reviewState).toBe("warning");
+    expect(Array.from(card.querySelectorAll(".badge.warning")).map((node) => node.textContent)).toEqual([
+      "Enter a valid email address.",
+    ]);
+
+    input.value = "person@example.com";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    expect(card.dataset.reviewState).toBe("ready");
+    expect(card.querySelector(".badge.warning")).toBeNull();
+  });
+
+  it("refreshes the suggested profile after a fill saves newer history", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        aliases: { fullName: ["full name"] },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { fullName: "Bob" },
+        aliases: { fullName: ["full name"] },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "history-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      history: [
+        {
+          id: "history-1",
+          formKey: "history-form",
+          formTitle: "Registration",
+          formUrl: activeForm.url,
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Alpha",
+          lastFilledAt: 1,
+          filledFieldCount: 1,
+          skippedFieldCount: 0,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: unknown },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["full_name"],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", {
+      randomUUID: (() => {
+        let counter = 0;
+        return () => `id-${++counter}`;
+      })(),
+    });
+
+    await loadPopupModule();
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    expect(Array.from(profileSelect.options).find((option) => option.value === "profile-1")?.textContent).toContain("suggested");
+
+    profileSelect.value = "profile-2";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(Array.from(profileSelect.options).find((option) => option.value === "profile-2")?.textContent).toContain("suggested");
+    });
+  });
+
+  it("drops stale in-memory history beyond the recent-history cap before reranking profiles", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        aliases: { fullName: ["full name"] },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-2",
+        name: "Beta",
+        values: { name: "Bob" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "profile-3",
+        name: "Gamma",
+        values: { name: "Cara" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "history-cap-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const history = [
+      {
+        id: "history-1",
+        formKey: "history-cap-form",
+        formTitle: "Registration",
+        formUrl: activeForm.url,
+        lastUsedProfileId: "profile-1",
+        lastUsedProfileName: "Alpha",
+        lastFilledAt: 1,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+      ...Array.from({ length: 24 }, (_, index) => ({
+        id: `history-${index + 2}`,
+        formKey: "history-cap-form",
+        formTitle: "Registration",
+        formUrl: activeForm.url,
+        lastUsedProfileId: "profile-2",
+        lastUsedProfileName: "Beta",
+        lastFilledAt: index + 2,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      })),
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      history,
+      settings: {
+        defaultProfileId: "profile-2",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: unknown },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["full_name"],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", {
+      randomUUID: (() => {
+        let counter = 0;
+        return () => `id-${++counter}`;
+      })(),
+    });
+    vi.setSystemTime(new Date(1000));
+
+    await loadPopupModule();
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    expect(Array.from(profileSelect.options).find((option) => option.value === "profile-1")?.textContent).toContain("suggested");
+
+    profileSelect.value = "profile-3";
+    profileSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(Array.from(profileSelect.options).find((option) => option.value === "profile-3")?.textContent).toContain("suggested");
+    });
+  });
+
+  it("keeps a successful fill status when saving local history fails", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "history-failure-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(
+              Object.fromEntries(
+                keys.map((key) => [
+                  key,
+                  key === "settings"
+                    ? {
+                        defaultProfileId: null,
+                        autoLoadMatchingProfile: false,
+                        confirmBeforeFill: false,
+                        showBackupSection: false,
+                      }
+                    : [],
+                ]),
+              ),
+            );
+          },
+          set(_value: Record<string, unknown>, callback: () => void) {
+            callback();
+          },
+          remove(_keys: string[], callback: () => void) {
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string; payload?: { kind?: string } }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({
+              ok: true,
+              data: {
+                status: "ready",
+                context: activeForm,
+              },
+            });
+            return;
+          }
+
+          if (message.type === "FILL_ACTIVE_FORM") {
+            callback({
+              ok: true,
+              data: {
+                filledFieldIds: ["full_name"],
+                skippedFieldIds: [],
+              },
+            });
+            return;
+          }
+
+          if (message.type === "RUN_STORAGE_MUTATION" && message.payload?.kind === "save_history_entry") {
+            callback({ ok: false, error: "History storage failed" });
+            return;
+          }
+
+          callback({ ok: true, data: null });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("navigator", {});
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
+      expect(statusCard.textContent).toBe("Filled 1 field(s). Local history was not saved.");
+      expect(statusCard.dataset.state).toBe("success");
+    });
+  });
+
+  it("still fills when preset autosave fails before the fill request", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "preset-save-failure-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(
+              Object.fromEntries(
+                keys.map((key) => [
+                  key,
+                  key === "settings"
+                    ? {
+                        defaultProfileId: null,
+                        autoLoadMatchingProfile: false,
+                        confirmBeforeFill: false,
+                        showBackupSection: false,
+                      }
+                    : [],
+                ]),
+              ),
+            );
+          },
+          set(_value: Record<string, unknown>, callback: () => void) {
+            callback();
+          },
+          remove(_keys: string[], callback: () => void) {
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string; payload?: { kind?: string } }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({
+              ok: true,
+              data: {
+                status: "ready",
+                context: activeForm,
+              },
+            });
+            return;
+          }
+
+          if (message.type === "FILL_ACTIVE_FORM") {
+            callback({
+              ok: true,
+              data: {
+                filledFieldIds: ["full_name"],
+                skippedFieldIds: [],
+              },
+            });
+            return;
+          }
+
+          if (message.type === "RUN_STORAGE_MUTATION" && message.payload?.kind === "save_preset") {
+            callback({ ok: false, error: "Preset storage failed" });
+            return;
+          }
+
+          callback({ ok: true, data: null });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("navigator", {});
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Alice";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
+      expect(statusCard.textContent).toBe("Filled 1 field(s). Local preset was not saved.");
+      expect(statusCard.dataset.state).toBe("success");
+    });
+  });
 });

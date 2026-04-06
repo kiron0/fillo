@@ -16,6 +16,8 @@ type StorageShape = {
   [STORAGE_KEYS.settings]?: AppSettings;
 };
 
+const MAX_HISTORY_ENTRIES = 25;
+
 const LEGACY_NO_MAPPING_SENTINEL = "__no_mapping__";
 
 function isStringRecord(value: unknown): value is Record<string, unknown> {
@@ -37,6 +39,22 @@ function isDetectedField(value: unknown): boolean {
 
   const type = value.type;
   const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
+  const gridMetadataValid =
+    type === "grid"
+      ? Array.isArray(value.gridRows) &&
+        value.gridRows.every((row) => typeof row === "string") &&
+        (value.gridRowIds === undefined ||
+          (Array.isArray(value.gridRowIds) &&
+            value.gridRowIds.length === value.gridRows.length &&
+            value.gridRowIds.every((rowId) => typeof rowId === "string"))) &&
+        (value.gridMode === "radio" || value.gridMode === "checkbox")
+      : value.gridRows === undefined && value.gridRowIds === undefined && value.gridMode === undefined;
+  const scaleMetadataValid =
+    type === "scale"
+      ? (value.scaleLowLabel === undefined || typeof value.scaleLowLabel === "string") &&
+        (value.scaleHighLabel === undefined || typeof value.scaleHighLabel === "string")
+      : value.scaleLowLabel === undefined && value.scaleHighLabel === undefined;
+
   return (
     typeof value.id === "string" &&
     typeof value.label === "string" &&
@@ -52,6 +70,8 @@ function isDetectedField(value: unknown): boolean {
       value.textSubtype === "url") &&
     (value.options === undefined || (Array.isArray(value.options) && value.options.every((option) => typeof option === "string"))) &&
     (value.otherOption === undefined || typeof value.otherOption === "string") &&
+    gridMetadataValid &&
+    scaleMetadataValid &&
     (value.sectionKey === undefined || typeof value.sectionKey === "string") &&
     (value.sectionTitle === undefined || typeof value.sectionTitle === "string") &&
     (value.helpText === undefined || typeof value.helpText === "string")
@@ -221,33 +241,65 @@ function normalizePreset(preset: FormPreset): FormPreset {
   };
 }
 
+function normalizePresetCollection(presets: FormPreset[]): FormPreset[] {
+  const latestByFormKey = new Map<string, FormPreset>();
+
+  for (const preset of presets.filter(isFormPreset).map(normalizePreset)) {
+    const previous = latestByFormKey.get(preset.formKey);
+    if (!previous || preset.updatedAt > previous.updatedAt) {
+      latestByFormKey.set(preset.formKey, preset);
+    }
+  }
+
+  return Array.from(latestByFormKey.values());
+}
+
+function normalizeHistoryEntries(history: FormHistoryEntry[]): FormHistoryEntry[] {
+  return [...history]
+    .sort((left, right) => right.lastFilledAt - left.lastFilledAt)
+    .slice(0, MAX_HISTORY_ENTRIES);
+}
+
+function normalizeSettings(settings: AppSettings | undefined, profiles: Profile[]): AppSettings {
+  const nextSettings: AppSettings = { ...DEFAULT_SETTINGS, ...(settings ?? {}) };
+  if (nextSettings.defaultProfileId && !profiles.some((profile) => profile.id === nextSettings.defaultProfileId)) {
+    nextSettings.defaultProfileId = null;
+  }
+
+  return nextSettings;
+}
+
 export async function readProfilesDirect(): Promise<Profile[]> {
   const result = await storageGet<StorageShape>([STORAGE_KEYS.profiles]);
-  return Array.isArray(result.profiles) ? result.profiles : [];
+  return Array.isArray(result.profiles) ? result.profiles.filter(isProfile) : [];
 }
 
 export async function readPresetsDirect(): Promise<FormPreset[]> {
   const result = await storageGet<StorageShape>([STORAGE_KEYS.presets]);
-  return Array.isArray(result.presets) ? result.presets.map(normalizePreset) : [];
+  return Array.isArray(result.presets) ? normalizePresetCollection(result.presets) : [];
 }
 
 export async function readHistoryDirect(): Promise<FormHistoryEntry[]> {
   const result = await storageGet<StorageShape>([STORAGE_KEYS.history]);
-  return Array.isArray(result.history) ? [...result.history].sort((left, right) => right.lastFilledAt - left.lastFilledAt) : [];
+  return Array.isArray(result.history) ? normalizeHistoryEntries(result.history.filter(isFormHistoryEntry)) : [];
 }
 
 export async function readSettingsDirect(): Promise<AppSettings> {
-  const result = await storageGet<StorageShape>([STORAGE_KEYS.settings]);
-  return { ...DEFAULT_SETTINGS, ...(result.settings ?? {}) };
+  const [profiles, result] = await Promise.all([
+    readProfilesDirect(),
+    storageGet<StorageShape>([STORAGE_KEYS.settings]),
+  ]);
+  return normalizeSettings(isAppSettings(result.settings) ? result.settings : undefined, profiles);
 }
 
 export async function readAllDirect(): Promise<Required<StorageShape>> {
   const result = await storageGet<StorageShape>(Object.values(STORAGE_KEYS));
+  const profiles = Array.isArray(result.profiles) ? result.profiles.filter(isProfile) : [];
   return {
-    profiles: Array.isArray(result.profiles) ? result.profiles : [],
-    presets: Array.isArray(result.presets) ? result.presets.map(normalizePreset) : [],
-    history: Array.isArray(result.history) ? [...result.history].sort((left, right) => right.lastFilledAt - left.lastFilledAt) : [],
-    settings: { ...DEFAULT_SETTINGS, ...(result.settings ?? {}) },
+    profiles,
+    presets: Array.isArray(result.presets) ? normalizePresetCollection(result.presets) : [],
+    history: Array.isArray(result.history) ? normalizeHistoryEntries(result.history.filter(isFormHistoryEntry)) : [],
+    settings: normalizeSettings(isAppSettings(result.settings) ? result.settings : undefined, profiles),
   };
 }
 
@@ -295,7 +347,7 @@ export async function savePresetDirect(preset: FormPreset): Promise<void> {
     presets.push(normalizedPreset);
   }
 
-  await storageSet({ [STORAGE_KEYS.presets]: presets });
+  await storageSet({ [STORAGE_KEYS.presets]: normalizePresetCollection(presets) });
 }
 
 export async function deletePresetDirect(presetId: string): Promise<void> {
@@ -314,7 +366,7 @@ export async function saveHistoryEntryDirect(entry: FormHistoryEntry): Promise<v
   const filtered = history.filter((item) => item.formKey !== entry.formKey);
   filtered.unshift(entry);
   await storageSet({
-    [STORAGE_KEYS.history]: filtered.slice(0, 25),
+    [STORAGE_KEYS.history]: normalizeHistoryEntries(filtered),
   });
 }
 
@@ -342,11 +394,11 @@ export async function importAppDataDirect(payload: ImportedAppData): Promise<voi
 
   const currentState = await readAllDirect();
   const nextProfiles = Array.isArray(payload.profiles) ? payload.profiles : currentState.profiles;
-  const nextPresets = Array.isArray(payload.presets) ? payload.presets : currentState.presets;
-  const nextHistory = Array.isArray(payload.history) ? payload.history : currentState.history;
+  const nextPresets = Array.isArray(payload.presets) ? normalizePresetCollection(payload.presets) : currentState.presets;
+  const nextHistory = Array.isArray(payload.history) ? normalizeHistoryEntries(payload.history) : currentState.history;
   await writeAllDirect({
     profiles: nextProfiles,
-    presets: nextPresets.map(normalizePreset),
+    presets: nextPresets,
     history: nextHistory,
     settings: payload.settings ? { ...DEFAULT_SETTINGS, ...payload.settings } : currentState.settings,
   });

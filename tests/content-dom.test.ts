@@ -93,6 +93,22 @@ const radioWithSyntheticOtherHtml = `
 </html>
 `;
 
+const radioWithDelayedOtherInputHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>Batch Delayed Other</title>
+  </head>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Batch *</div>
+      <div role="radio" aria-checked="false">17</div>
+      <div role="radio" aria-checked="false">Other</div>
+    </div>
+  </body>
+</html>
+`;
+
 const explicitNonOtherOptionHtml = `
 <!doctype html>
 <html>
@@ -1054,6 +1070,38 @@ describe("content dom", () => {
     expect(checkboxes[0]!.getAttribute("aria-checked")).toBe("true");
     expect(checkboxes[1]!.getAttribute("aria-checked")).toBe("true");
     expect((document.querySelector('input[name="courses_other"]') as HTMLInputElement).value).toBe("Physics");
+  });
+
+  it("waits for a delayed radio Other input in the async path", async () => {
+    document.documentElement.innerHTML = radioWithDelayedOtherInputHtml;
+    setInteractiveRoleClicks(document);
+
+    const radios = Array.from(document.querySelectorAll<HTMLElement>('[role="radio"]'));
+    radios[1]!.addEventListener("click", () => {
+      window.setTimeout(() => {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.name = "batch_other_delayed";
+        radios[1]!.insertAdjacentElement("afterend", input);
+      }, 0);
+    });
+
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSdelayedother/viewform");
+
+    const fillResult = await fillFormDocumentAsync(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: {
+          kind: "choice_with_other",
+          selected: "Other",
+          otherText: "18",
+        },
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual([scan.fields[0]!.id]);
+    expect((document.querySelector('input[name="batch_other_delayed"]') as HTMLInputElement).value).toBe("18");
   });
 
   it("fills listbox options from the scoped popup instead of unrelated global options", () => {

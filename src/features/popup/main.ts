@@ -56,6 +56,7 @@ const state: PopupState = {
 };
 
 const AUTOSAVE_DELAY_MS = 500;
+const MAX_HISTORY_ENTRIES = 25;
 
 const formTitle = document.querySelector<HTMLHeadingElement>("#form-title")!;
 const formMeta = document.querySelector<HTMLParagraphElement>("#form-meta")!;
@@ -109,6 +110,10 @@ function getRankedProfileSuggestions(): ReturnType<typeof rankProfilesForFields>
 
 function getSuggestedProfileId(): string | null {
   return getRankedProfileSuggestions()[0]?.profile.id ?? null;
+}
+
+function normalizePopupHistory(entries: FormHistoryEntry[]): FormHistoryEntry[] {
+  return [...entries].sort((left, right) => right.lastFilledAt - left.lastFilledAt).slice(0, MAX_HISTORY_ENTRIES);
 }
 
 function setInvalidPageState(title: string, message: string): void {
@@ -232,6 +237,8 @@ function updateFieldValue(fieldId: string, value: FieldValue, markDirty = true):
   if (mappingStateChanged) {
     syncFieldMappingControl(fieldId);
   }
+
+  refreshRenderedFieldReview(fieldId);
 }
 
 function fieldValuesEqual(left: FieldValue | undefined, right: FieldValue | undefined): boolean {
@@ -375,6 +382,92 @@ function getFieldReviewState(field: DetectedField): {
   const cleared = state.clearedFieldIds.has(field.id) || (field.type === "dropdown" && state.values[field.id] === null);
 
   return { include, hasValue, requiredEmpty, invalidMessage, cleared };
+}
+
+function getCardReviewState(review: ReturnType<typeof getFieldReviewState>): "excluded" | "warning" | "ready" {
+  if (!review.include) {
+    return "excluded";
+  }
+
+  return review.requiredEmpty || review.invalidMessage ? "warning" : "ready";
+}
+
+function buildFieldMeta(field: DetectedField, review: ReturnType<typeof getFieldReviewState>): HTMLDivElement | null {
+  const meta = document.createElement("div");
+  meta.className = "field-meta";
+
+  if (field.required) {
+    const requiredBadge = document.createElement("span");
+    requiredBadge.className = "badge required";
+    requiredBadge.textContent = "Required";
+    meta.append(requiredBadge);
+  }
+
+  if (!review.include) {
+    const excludedBadge = document.createElement("span");
+    excludedBadge.className = "badge muted";
+    excludedBadge.textContent = "Excluded";
+    meta.append(excludedBadge);
+  }
+
+  if (review.requiredEmpty) {
+    const reviewBadge = document.createElement("span");
+    reviewBadge.className = "badge warning";
+    reviewBadge.textContent = "Needs value";
+    meta.append(reviewBadge);
+  }
+
+  if (review.invalidMessage) {
+    const invalidBadge = document.createElement("span");
+    invalidBadge.className = "badge warning";
+    invalidBadge.textContent = review.invalidMessage;
+    meta.append(invalidBadge);
+  }
+
+  if (state.skippedFillFieldIds.includes(field.id)) {
+    const skippedBadge = document.createElement("span");
+    skippedBadge.className = "badge warning";
+    skippedBadge.textContent = "Skipped on last fill";
+    meta.append(skippedBadge);
+  }
+
+  if (state.mappings[field.id]) {
+    const mappedBadge = document.createElement("span");
+    mappedBadge.className = "badge";
+    mappedBadge.textContent = `Mapped: ${state.mappings[field.id]}`;
+    meta.append(mappedBadge);
+  }
+
+  return meta.childElementCount > 0 ? meta : null;
+}
+
+function refreshRenderedFieldReview(fieldId: string): void {
+  const field = state.activeForm?.fields.find((candidate) => candidate.id === fieldId);
+  const card = Array.from(fieldsContainer.querySelectorAll<HTMLElement>("[data-field-id]")).find(
+    (candidate) => candidate.dataset.fieldId === fieldId,
+  );
+  const header = card?.querySelector<HTMLElement>(".field-head");
+
+  if (!field || !card || !header) {
+    return;
+  }
+
+  const review = getFieldReviewState(field);
+  card.dataset.reviewState = getCardReviewState(review);
+
+  const nextMeta = buildFieldMeta(field, review);
+  const existingMeta = header.querySelector<HTMLElement>(".field-meta");
+
+  if (nextMeta) {
+    if (existingMeta) {
+      existingMeta.replaceWith(nextMeta);
+    } else {
+      header.append(nextMeta);
+    }
+    return;
+  }
+
+  existingMeta?.remove();
 }
 
 function hasPersistableFieldValue(value: FieldValue | undefined): boolean {
@@ -1440,7 +1533,7 @@ function renderFields(): void {
       const card = document.createElement("article");
       card.className = "field-card";
       card.dataset.fieldId = field.id;
-      card.dataset.reviewState = !review.include ? "excluded" : review.requiredEmpty || review.invalidMessage ? "warning" : "ready";
+      card.dataset.reviewState = getCardReviewState(review);
 
       const header = document.createElement("div");
       header.className = "field-head";
@@ -1488,45 +1581,8 @@ function renderFields(): void {
         header.append(description);
       }
 
-      const meta = document.createElement("div");
-      meta.className = "field-meta";
-      if (field.required) {
-        const requiredBadge = document.createElement("span");
-        requiredBadge.className = "badge required";
-        requiredBadge.textContent = "Required";
-        meta.append(requiredBadge);
-      }
-      if (!review.include) {
-        const excludedBadge = document.createElement("span");
-        excludedBadge.className = "badge muted";
-        excludedBadge.textContent = "Excluded";
-        meta.append(excludedBadge);
-      }
-      if (review.requiredEmpty) {
-        const reviewBadge = document.createElement("span");
-        reviewBadge.className = "badge warning";
-        reviewBadge.textContent = "Needs value";
-        meta.append(reviewBadge);
-      }
-      if (review.invalidMessage) {
-        const invalidBadge = document.createElement("span");
-        invalidBadge.className = "badge warning";
-        invalidBadge.textContent = review.invalidMessage;
-        meta.append(invalidBadge);
-      }
-      if (state.skippedFillFieldIds.includes(field.id)) {
-        const skippedBadge = document.createElement("span");
-        skippedBadge.className = "badge warning";
-        skippedBadge.textContent = "Skipped on last fill";
-        meta.append(skippedBadge);
-      }
-      if (state.mappings[field.id]) {
-        const mappedBadge = document.createElement("span");
-        mappedBadge.className = "badge";
-        mappedBadge.textContent = `Mapped: ${state.mappings[field.id]}`;
-        meta.append(mappedBadge);
-      }
-      if (meta.childElementCount > 0) {
+      const meta = buildFieldMeta(field, review);
+      if (meta) {
         header.append(meta);
       }
 
@@ -1761,7 +1817,12 @@ async function handleFill(): Promise<void> {
     return;
   }
 
-  await flushPendingPresetSave();
+  const localWarnings: string[] = [];
+  try {
+    await flushPendingPresetSave();
+  } catch {
+    localWarnings.push("Local preset was not saved.");
+  }
 
   const result = await sendBackgroundMessage<FillResult>({
     type: "FILL_ACTIVE_FORM",
@@ -1772,6 +1833,19 @@ async function handleFill(): Promise<void> {
     },
   });
   state.skippedFillFieldIds = [...result.skippedFieldIds];
+
+  const historyEntry = {
+    id: crypto.randomUUID(),
+    formKey: state.activeForm.formKey,
+    formTitle: state.activeForm.title,
+    formUrl: state.activeForm.url,
+    lastUsedProfileId: state.selectedProfileId,
+    lastUsedProfileName: getSelectedProfile()?.name ?? null,
+    lastFilledAt: Date.now(),
+    filledFieldCount: result.filledFieldIds.length,
+    skippedFieldCount: result.skippedFieldIds.length,
+  };
+  let historySaved = false;
 
   const skippedLabels = result.skippedFieldIds.map(getFieldDisplayLabel);
   const skippedTypes = result.skippedFieldIds.map(getFieldType);
@@ -1785,43 +1859,43 @@ async function handleFill(): Promise<void> {
 
   if (skippedAreOnlyDropdowns) {
     renderFields();
-    await saveHistoryEntry({
-      id: crypto.randomUUID(),
-      formKey: state.activeForm.formKey,
-      formTitle: state.activeForm.title,
-      formUrl: state.activeForm.url,
-      lastUsedProfileId: state.selectedProfileId,
-      lastUsedProfileName: getSelectedProfile()?.name ?? null,
-      lastFilledAt: Date.now(),
-      filledFieldCount: result.filledFieldIds.length,
-      skippedFieldCount: result.skippedFieldIds.length,
-    });
+    try {
+      await saveHistoryEntry(historyEntry);
+      state.history = normalizePopupHistory([...state.history, historyEntry]);
+      renderProfileSelect();
+      historySaved = true;
+    } catch {
+      historySaved = false;
+    }
+    if (!historySaved) {
+      localWarnings.push("Local history was not saved.");
+    }
     setStatus(
       result.filledFieldIds.length > 0
-        ? `Filled ${result.filledFieldIds.length} field(s). Review dropdown selections on the form before submitting.`
-        : "Review dropdown selections on the form before submitting.",
+        ? `Filled ${result.filledFieldIds.length} field(s). Review dropdown selections on the form before submitting.${localWarnings.length ? ` ${localWarnings.join(" ")}` : ""}`
+        : `Review dropdown selections on the form before submitting.${localWarnings.length ? ` ${localWarnings.join(" ")}` : ""}`,
       "idle",
     );
     return;
   }
 
   renderFields();
-  await saveHistoryEntry({
-    id: crypto.randomUUID(),
-    formKey: state.activeForm.formKey,
-    formTitle: state.activeForm.title,
-    formUrl: state.activeForm.url,
-    lastUsedProfileId: state.selectedProfileId,
-    lastUsedProfileName: getSelectedProfile()?.name ?? null,
-    lastFilledAt: Date.now(),
-    filledFieldCount: result.filledFieldIds.length,
-    skippedFieldCount: result.skippedFieldIds.length,
-  });
+  try {
+    await saveHistoryEntry(historyEntry);
+    state.history = normalizePopupHistory([...state.history, historyEntry]);
+    renderProfileSelect();
+    historySaved = true;
+  } catch {
+    historySaved = false;
+  }
+  if (!historySaved) {
+    localWarnings.push("Local history was not saved.");
+  }
 
   setStatus(
     result.skippedFieldIds.length
-      ? `Filled ${result.filledFieldIds.length} field(s). ${result.skippedFieldIds.length} field(s) could not be matched.${skippedSuffix}`
-      : `Filled ${result.filledFieldIds.length} field(s).`,
+      ? `Filled ${result.filledFieldIds.length} field(s). ${result.skippedFieldIds.length} field(s) could not be matched.${skippedSuffix}${localWarnings.length ? ` ${localWarnings.join(" ")}` : ""}`
+      : `Filled ${result.filledFieldIds.length} field(s).${localWarnings.length ? ` ${localWarnings.join(" ")}` : ""}`,
     result.skippedFieldIds.length ? "error" : "success",
   );
 }
@@ -1875,7 +1949,7 @@ function handleClear(): void {
   state.skippedFillFieldIds = [];
   renderPresetActions();
   renderFields();
-  setStatus("Cleared current popup values and mappings.", "idle");
+  setStatus("Cleared current popup values, mappings, and exclusions.", "idle");
 }
 
 async function handleResetPreset(): Promise<void> {

@@ -642,7 +642,7 @@ importButton.addEventListener("click", () => {
     }
 
     if (!isImportedData(payload)) {
-      throw new Error("Import payload must be a valid version 1 backup with well-formed profiles, presets, and settings.");
+      throw new Error("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
     }
 
     await importAppData(payload, readImportSelectionControls());
@@ -653,7 +653,7 @@ importButton.addEventListener("click", () => {
 
 clearDataButton.addEventListener("click", () => {
   void runTopLevelAction(async () => {
-    if (!window.confirm("Clear every saved profile, preset, and setting?")) {
+    if (!window.confirm("Clear every saved profile, preset, history entry, and setting?")) {
       return;
     }
     await clearAllData();

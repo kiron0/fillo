@@ -1,5 +1,5 @@
-import { buildInitialFieldValues, suggestProfileKey } from "../src/core/matching";
-import type { DetectedField, Profile } from "../src/core/types";
+import { buildInitialFieldValues, rankProfilesForFields, suggestProfileKey } from "../src/core/matching";
+import type { DetectedField, FormHistoryEntry, Profile } from "../src/core/types";
 
 const profile: Profile = {
   id: "profile-1",
@@ -63,5 +63,58 @@ describe("matching", () => {
       name: "Manual Name",
     });
     expect(result.mappings).toEqual({});
+  });
+
+  it("prefers the most recent matching history entry when ranking profiles", () => {
+    const profiles: Profile[] = [
+      profile,
+      {
+        id: "profile-2",
+        name: "Fallback",
+        values: {
+          fullName: "Another Person",
+          studentId: "IUS-2024-999",
+        },
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    const history: FormHistoryEntry[] = [
+      {
+        id: "history-1",
+        formKey: "registration-form",
+        formTitle: "Registration",
+        lastUsedProfileId: "profile-1",
+        lastUsedProfileName: "Academic",
+        lastFilledAt: 100,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-2",
+        formKey: "registration-form",
+        formTitle: "Registration",
+        lastUsedProfileId: "profile-2",
+        lastUsedProfileName: "Fallback",
+        lastFilledAt: 200,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-3",
+        formKey: "registration-form",
+        formTitle: "Registration",
+        lastUsedProfileId: "profile-1",
+        lastUsedProfileName: "Academic",
+        lastFilledAt: 300,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ];
+
+    const ranked = rankProfilesForFields(fields, profiles, history, "registration-form");
+
+    expect(ranked.map((entry) => entry.profile.id)).toEqual(["profile-1", "profile-2"]);
   });
 });

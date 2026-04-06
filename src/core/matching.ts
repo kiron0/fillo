@@ -12,6 +12,7 @@ export interface RankedProfileSuggestion {
   score: number;
   matchedFieldCount: number;
   historyBoost: number;
+  lastUsedAt: number;
 }
 
 function scoreTokens(left: string, right: string): number {
@@ -70,7 +71,20 @@ export function rankProfilesForFields(
   history: FormHistoryEntry[],
   formKey?: string,
 ): RankedProfileSuggestion[] {
-  const matchingHistory = formKey ? history.filter((entry) => entry.formKey === formKey) : [];
+  const latestHistoryByProfileId = new Map<string, FormHistoryEntry>();
+
+  if (formKey) {
+    for (const entry of history) {
+      if (entry.formKey !== formKey || !entry.lastUsedProfileId) {
+        continue;
+      }
+
+      const previousEntry = latestHistoryByProfileId.get(entry.lastUsedProfileId);
+      if (!previousEntry || entry.lastFilledAt > previousEntry.lastFilledAt) {
+        latestHistoryByProfileId.set(entry.lastUsedProfileId, entry);
+      }
+    }
+  }
 
   return profiles
     .map((profile) => {
@@ -100,13 +114,14 @@ export function rankProfilesForFields(
         }
       }
 
-      const historyEntry = matchingHistory.find((entry) => entry.lastUsedProfileId === profile.id);
+      const historyEntry = latestHistoryByProfileId.get(profile.id);
       const historyBoost = historyEntry ? 1 + Math.min(1, matchedFieldCount / Math.max(fields.length, 1)) : 0;
 
       return {
         profile,
         matchedFieldCount,
         historyBoost,
+        lastUsedAt: historyEntry?.lastFilledAt ?? 0,
         score: totalScore + historyBoost,
       };
     })
@@ -118,6 +133,10 @@ export function rankProfilesForFields(
 
       if (right.matchedFieldCount !== left.matchedFieldCount) {
         return right.matchedFieldCount - left.matchedFieldCount;
+      }
+
+      if (right.lastUsedAt !== left.lastUsedAt) {
+        return right.lastUsedAt - left.lastUsedAt;
       }
 
       return right.profile.updatedAt - left.profile.updatedAt;

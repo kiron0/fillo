@@ -1472,6 +1472,30 @@ function fillChoiceAttachedText(
   return true;
 }
 
+async function fillChoiceAttachedTextAsync(
+  choiceNode: HTMLElement | null,
+  role: "radio" | "checkbox",
+  container: HTMLElement,
+  text: string,
+): Promise<boolean> {
+  const directControl = (choiceNode ? findAttachedTextControl(choiceNode, role, container) : null) ?? findSingleBoundaryTextControl(container);
+  if (directControl) {
+    setNativeInputValue(directControl, text);
+    return true;
+  }
+
+  for (let attempt = 0; attempt < POPUP_OPTION_RETRY_ATTEMPTS; attempt += 1) {
+    await sleep(POPUP_OPTION_RETRY_DELAY_MS);
+    const delayedControl = (choiceNode ? findAttachedTextControl(choiceNode, role, container) : null) ?? findSingleBoundaryTextControl(container);
+    if (delayedControl) {
+      setNativeInputValue(delayedControl, text);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function findPlaceholderPopupOption(candidates: HTMLElement[]): HTMLElement | undefined {
   return candidates.find((candidate) => looksLikePlaceholderLabel(rawTextContent(candidate)));
 }
@@ -2062,7 +2086,7 @@ export async function fillFormDocumentAsync(root: Document, request: FillRequest
           success = Boolean(match);
 
           if (success && referenceField.otherOption && optionEquals(referenceField.otherOption, selected)) {
-            success = fillChoiceAttachedText(match, "radio", descriptor.container, value.otherText);
+            success = await fillChoiceAttachedTextAsync(match, "radio", descriptor.container, value.otherText);
           }
         } else {
           success = false;
@@ -2094,7 +2118,12 @@ export async function fillFormDocumentAsync(root: Document, request: FillRequest
             normalizedSelected.some((item) => optionEquals(item, referenceField.otherOption as string)) &&
             value.otherText.trim()
           ) {
-            success = fillChoiceAttachedText(findAttachedOtherChoice(descriptor.container, "checkbox"), "checkbox", descriptor.container, value.otherText);
+            success = await fillChoiceAttachedTextAsync(
+              findAttachedOtherChoice(descriptor.container, "checkbox"),
+              "checkbox",
+              descriptor.container,
+              value.otherText,
+            );
           }
         } else {
           success = false;

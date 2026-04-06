@@ -404,6 +404,347 @@ describe("storage", () => {
     });
   });
 
+  it("normalizes imported history to the newest 25 entries", async () => {
+    const history = Array.from({ length: 30 }, (_, index) => ({
+      id: `history-${index + 1}`,
+      formKey: `form-${index + 1}`,
+      formTitle: `Form ${index + 1}`,
+      lastUsedProfileId: null,
+      lastFilledAt: index + 1,
+      filledFieldCount: 1,
+      skippedFieldCount: 0,
+    }));
+
+    await importAppData({
+      version: 1,
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+      history,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.history).toHaveLength(25);
+    expect(exported.history?.[0]?.id).toBe("history-30");
+    expect(exported.history?.[24]?.id).toBe("history-6");
+  });
+
+  it("rejects imported presets with invalid field grid metadata", async () => {
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [
+          {
+            id: "preset-1",
+            name: "Invalid Grid Preset",
+            formKey: "form-1",
+            formTitle: "Invalid Grid",
+            fields: [
+              {
+                id: "availability",
+                label: "Availability",
+                normalizedLabel: "availability",
+                type: "grid",
+                required: false,
+                gridRows: ["Morning", 2] as unknown as string[],
+              },
+            ],
+            values: {},
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+  });
+
+  it("rejects imported presets when field-type metadata is structurally inconsistent", async () => {
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [
+          {
+            id: "preset-1",
+            name: "Broken Metadata Preset",
+            formKey: "form-1",
+            formTitle: "Broken Metadata",
+            fields: [
+              {
+                id: "full_name",
+                label: "Full Name",
+                normalizedLabel: "full name",
+                type: "text",
+                required: true,
+                gridMode: "radio",
+              },
+            ],
+            values: {},
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [
+          {
+            id: "preset-2",
+            name: "Grid Without Mode",
+            formKey: "form-2",
+            formTitle: "Grid Without Mode",
+            fields: [
+              {
+                id: "availability",
+                label: "Availability",
+                normalizedLabel: "availability",
+                type: "grid",
+                required: false,
+                gridRows: ["Morning", "Evening"],
+              },
+            ],
+            values: {},
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+  });
+
+  it("filters malformed stored records on read", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.profiles = [
+      {
+        id: "profile-1",
+        name: "Valid",
+        values: { fullName: "Toufiq Hasan" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "broken-profile",
+        name: "Broken",
+        values: { fullName: { nested: true } },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Valid Preset",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [],
+        values: {},
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "preset-2",
+        name: "Broken Preset",
+        formKey: "form-2",
+        fields: [{ id: "field", label: "Field", normalizedLabel: "field", type: "grid", required: false, gridMode: "broken" }],
+        values: {},
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "preset-3",
+        name: "Broken Preset 2",
+        formKey: "form-3",
+        formTitle: "Form 3",
+        fields: [{ id: "field", label: "Field", normalizedLabel: "field", type: "text", required: false, gridMode: "radio" }],
+        values: {},
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+    chromeWithState.state.history = [
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: null,
+        lastFilledAt: 10,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+      {
+        id: "history-2",
+        formKey: "form-2",
+        formTitle: "Form 2",
+        lastUsedProfileId: { broken: true },
+        lastFilledAt: 11,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+    ];
+    chromeWithState.state.settings = {
+      defaultProfileId: ["broken"],
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    };
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Valid",
+        values: { fullName: "Toufiq Hasan" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Valid Preset",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [],
+      values: {},
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    expect(await getPresetByFormKey("form-2")).toBeNull();
+    expect(await getPresetByFormKey("form-3")).toBeNull();
+    expect(await getSettings()).toEqual({
+      defaultProfileId: null,
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.profiles).toHaveLength(1);
+    expect(exported.presets).toHaveLength(1);
+    expect(exported.history).toEqual([
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: null,
+        lastFilledAt: 10,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
+    ]);
+  });
+
+  it("deduplicates stored presets by form key and keeps the newest one", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-old",
+        name: "Old Preset",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [],
+        values: { fullName: "Old" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "preset-new",
+        name: "New Preset",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [],
+        values: { fullName: "New" },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-new",
+      name: "New Preset",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      fields: [],
+      values: { fullName: "New" },
+      createdAt: 2,
+      updatedAt: 2,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-new",
+        name: "New Preset",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [],
+        values: { fullName: "New" },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ]);
+  });
+
+  it("clears a stale default profile id when the profile no longer exists", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.profiles = [
+      {
+        id: "profile-1",
+        name: "Valid",
+        values: { fullName: "Toufiq Hasan" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    chromeWithState.state.settings = {
+      defaultProfileId: "missing-profile",
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    };
+
+    expect(await getSettings()).toEqual({
+      defaultProfileId: null,
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.settings).toEqual({
+      defaultProfileId: null,
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+  });
+
   it("keeps the build manifest version in sync with package.json", async () => {
     const packageJson = JSON.parse(await readFile(join(process.cwd(), "package.json"), "utf8")) as { version: string };
     const buildScript = await readFile(join(process.cwd(), "scripts", "build.ts"), "utf8");

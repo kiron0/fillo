@@ -2444,6 +2444,109 @@ describe("popup", () => {
     });
   });
 
+  it("still flushes the latest scheduled preset save when an older in-flight save fails", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "popup-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    let releaseFirstPresetSave: (() => void) | null = null;
+    let presetSaveCallCount = 0;
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", {
+      ...mock.chrome,
+      storage: {
+        local: {
+          ...mock.chrome.storage.local,
+          set(value: Record<string, unknown>, callback: () => void) {
+            Object.assign(mock.state, value);
+            if ("presets" in value) {
+              presetSaveCallCount += 1;
+              if (presetSaveCallCount === 1) {
+                releaseFirstPresetSave = () => {
+                  (mock.chrome.runtime as { lastError?: { message: string } }).lastError = {
+                    message: "Preset storage failed",
+                  };
+                  callback();
+                  (mock.chrome.runtime as { lastError?: { message: string } }).lastError = undefined;
+                };
+                return;
+              }
+            }
+            callback();
+          },
+        },
+      },
+      runtime: {
+        ...mock.chrome.runtime,
+        lastError: undefined as { message: string } | undefined,
+        sendMessage(message: { type: string; payload?: { kind?: string } }, callback: (response: unknown) => void) {
+          if (message.type === "FILL_ACTIVE_FORM") {
+            callback({
+              ok: true,
+              data: {
+                filledFieldIds: ["full_name"],
+                skippedFieldIds: [],
+              },
+            });
+            return;
+          }
+
+          mock.chrome.runtime.sendMessage(message, callback);
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    const input = document.querySelector<HTMLInputElement>('#fields input[type="text"]')!;
+    input.value = "Alice";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(500);
+
+    input.value = "Alice Updated";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+    await Promise.resolve();
+
+    const firstPresetSaveRelease = releaseFirstPresetSave as
+      | (() => void)
+      | null;
+    if (firstPresetSaveRelease) {
+      firstPresetSaveRelease();
+    }
+
+    await vi.waitFor(() => {
+      expect(presetSaveCallCount).toBe(2);
+      const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
+      expect(statusCard.textContent).toBe("Filled 1 field(s).");
+      expect(statusCard.dataset.state).toBe("success");
+    });
+  });
+
   it("rolls back an in-flight autosave when the popup is cleared", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",
@@ -5201,6 +5304,96 @@ describe("popup", () => {
 
     await vi.waitFor(() => {
       expect(Array.from(profileSelect.options).find((option) => option.value === "profile-2")?.textContent).toContain("suggested");
+    });
+  });
+
+  it("drops stale suggested profile state after fill when storage clears a missing profile id from history", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { nickname: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "history-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: true,
+        },
+      ],
+    };
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      history: [],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    mock.chrome.runtime.sendMessage = (
+      message: { type: string; payload?: unknown },
+      callback: (response: unknown) => void,
+    ) => {
+      if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+        callback({
+          ok: true,
+          data: {
+            status: "ready",
+            context: activeForm,
+          },
+        });
+        return;
+      }
+
+      if (message.type === "FILL_ACTIVE_FORM") {
+        callback({
+          ok: true,
+          data: {
+            filledFieldIds: ["full_name"],
+            skippedFieldIds: [],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: false, error: "Unknown message" });
+    };
+
+    vi.stubGlobal("chrome", mock.chrome);
+    vi.stubGlobal("crypto", {
+      randomUUID: (() => {
+        let counter = 0;
+        return () => `id-${++counter}`;
+      })(),
+    });
+
+    await loadPopupModule();
+
+    const profileSelect = document.querySelector<HTMLSelectElement>("#profile-select")!;
+    expect(Array.from(profileSelect.options).find((option) => option.value === "profile-1")?.textContent).toBe("Alpha");
+
+    mock.state.profiles = [];
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      expect(Array.from(profileSelect.options).find((option) => option.value === "profile-1")?.textContent).toBe("Alpha");
     });
   });
 

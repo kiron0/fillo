@@ -1062,6 +1062,7 @@ function runPresetPersist(showStatus = false): Promise<void> {
 
 async function flushPendingPresetSave(): Promise<void> {
   const hadScheduledSave = autosaveTimer !== null;
+  let lastError: unknown = null;
   if (hadScheduledSave) {
     if (autosaveTimer !== null) {
       window.clearTimeout(autosaveTimer);
@@ -1070,11 +1071,24 @@ async function flushPendingPresetSave(): Promise<void> {
   }
 
   if (presetSaveInFlight) {
-    await presetSaveInFlight;
+    try {
+      await presetSaveInFlight;
+    } catch (error) {
+      lastError = error;
+    }
   }
 
   if (hadScheduledSave) {
-    await runPresetPersist();
+    try {
+      await runPresetPersist();
+      lastError = null;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
   }
 }
 
@@ -1991,7 +2005,7 @@ async function handleFill(): Promise<void> {
     renderFields();
     try {
       await saveHistoryEntry(historyEntry);
-      state.history = normalizePopupHistory([...state.history, historyEntry]);
+      state.history = await getFormHistory();
       renderProfileSelect();
       historySaved = true;
     } catch {
@@ -2012,7 +2026,7 @@ async function handleFill(): Promise<void> {
   renderFields();
   try {
     await saveHistoryEntry(historyEntry);
-    state.history = normalizePopupHistory([...state.history, historyEntry]);
+    state.history = await getFormHistory();
     renderProfileSelect();
     historySaved = true;
   } catch {

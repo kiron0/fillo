@@ -260,9 +260,10 @@ function normalizePreset(preset: FormPreset): FormPreset {
     mappings
       ? Object.fromEntries(Object.entries(mappings).filter(([fieldId]) => !activeFieldIds || activeFieldIds.has(fieldId)))
       : undefined;
+  const mappedFieldIds = new Set(Object.keys(normalizedMappings ?? {}));
   const normalizedUnmappedFieldIdsInSchema = activeFieldIds
-    ? normalizedUnmappedFieldIds.filter((fieldId) => activeFieldIds.has(fieldId))
-    : normalizedUnmappedFieldIds;
+    ? normalizedUnmappedFieldIds.filter((fieldId) => activeFieldIds.has(fieldId) && !mappedFieldIds.has(fieldId))
+    : normalizedUnmappedFieldIds.filter((fieldId) => !mappedFieldIds.has(fieldId));
   const normalizedExcludedFieldIds = activeFieldIds
     ? rawExcludedFieldIds?.filter((fieldId) => activeFieldIds.has(fieldId))
     : rawExcludedFieldIds;
@@ -303,16 +304,30 @@ function normalizePresetValueForField(field: DetectedField, value: FieldValue): 
 }
 
 function normalizePresetCollection(presets: FormPreset[]): FormPreset[] {
-  const latestByFormKey = new Map<string, FormPreset>();
+  const normalizedPresets = presets
+    .filter(isFormPreset)
+    .map(normalizePreset)
+    .map((preset, index) => ({ preset, index }))
+    .sort(
+      (left, right) =>
+        left.preset.updatedAt - right.preset.updatedAt || left.index - right.index,
+    );
+  const seenIds = new Set<string>();
+  const seenFormKeys = new Set<string>();
+  const deduped: FormPreset[] = [];
 
-  for (const preset of presets.filter(isFormPreset).map(normalizePreset)) {
-    const previous = latestByFormKey.get(preset.formKey);
-    if (!previous || preset.updatedAt >= previous.updatedAt) {
-      latestByFormKey.set(preset.formKey, preset);
+  for (let index = normalizedPresets.length - 1; index >= 0; index -= 1) {
+    const preset = normalizedPresets[index]!.preset;
+    if (seenIds.has(preset.id) || seenFormKeys.has(preset.formKey)) {
+      continue;
     }
+
+    seenIds.add(preset.id);
+    seenFormKeys.add(preset.formKey);
+    deduped.push(preset);
   }
 
-  return Array.from(latestByFormKey.values());
+  return deduped.reverse();
 }
 
 function normalizeProfileCollection(profiles: Profile[]): Profile[] {
@@ -404,16 +419,35 @@ export async function saveProfileDirect(profile: Profile): Promise<void> {
 }
 
 export async function deleteProfileDirect(profileId: string): Promise<void> {
-  const [profiles, settings] = await Promise.all([readProfilesDirect(), readSettingsDirect()]);
+  const [profiles, settings, history] = await Promise.all([readProfilesDirect(), readSettingsDirect(), readHistoryDirect()]);
   const nextState: StorageShape = {
     [STORAGE_KEYS.profiles]: profiles.filter((item) => item.id !== profileId),
   };
+  const nextHistory = history.map((entry) =>
+    entry.lastUsedProfileId === profileId
+      ? {
+          ...entry,
+          lastUsedProfileId: null,
+          lastUsedProfileName: null,
+        }
+      : entry,
+  );
 
   if (settings.defaultProfileId === profileId) {
     nextState[STORAGE_KEYS.settings] = {
       ...settings,
       defaultProfileId: null,
     };
+  }
+
+  if (
+    nextHistory.some(
+      (entry, index) =>
+        entry.lastUsedProfileId !== history[index]?.lastUsedProfileId ||
+        entry.lastUsedProfileName !== history[index]?.lastUsedProfileName,
+    )
+  ) {
+    nextState[STORAGE_KEYS.history] = nextHistory;
   }
 
   await storageSet(nextState);
@@ -448,9 +482,18 @@ export async function saveSettingsDirect(settings: AppSettings): Promise<void> {
 }
 
 export async function saveHistoryEntryDirect(entry: FormHistoryEntry): Promise<void> {
+  const profiles = await readProfilesDirect();
+  const normalizedEntry =
+    entry.lastUsedProfileId && !profiles.some((profile) => profile.id === entry.lastUsedProfileId)
+      ? {
+          ...entry,
+          lastUsedProfileId: null,
+          lastUsedProfileName: null,
+        }
+      : entry;
   const history = await readHistoryDirect();
-  const filtered = history.filter((item) => item.formKey !== entry.formKey);
-  filtered.unshift(entry);
+  const filtered = history.filter((item) => item.formKey !== normalizedEntry.formKey);
+  filtered.unshift(normalizedEntry);
   await storageSet({
     [STORAGE_KEYS.history]: normalizeHistoryEntries(filtered),
   });

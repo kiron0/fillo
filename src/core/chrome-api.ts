@@ -13,14 +13,18 @@ export function storageGet<T extends Record<string, unknown>>(keys: string[]): P
       return;
     }
 
-    chrome.storage.local.get(keys, (result) => {
-      const error = getLastErrorMessage();
-      if (error) {
-        reject(new Error(error));
-        return;
-      }
-      resolve(result as T);
-    });
+    try {
+      chrome.storage.local.get(keys, (result) => {
+        const error = getLastErrorMessage();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve(result as T);
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error("chrome.storage.local.get failed"));
+    }
   });
 }
 
@@ -31,14 +35,18 @@ export function storageSet(value: Record<string, unknown>): Promise<void> {
       return;
     }
 
-    chrome.storage.local.set(value, () => {
-      const error = getLastErrorMessage();
-      if (error) {
-        reject(new Error(error));
-        return;
-      }
-      resolve();
-    });
+    try {
+      chrome.storage.local.set(value, () => {
+        const error = getLastErrorMessage();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve();
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error("chrome.storage.local.set failed"));
+    }
   });
 }
 
@@ -49,50 +57,62 @@ export function storageRemove(keys: string[]): Promise<void> {
       return;
     }
 
-    chrome.storage.local.remove(keys, () => {
-      const error = getLastErrorMessage();
-      if (error) {
-        reject(new Error(error));
-        return;
-      }
-      resolve();
-    });
+    try {
+      chrome.storage.local.remove(keys, () => {
+        const error = getLastErrorMessage();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve();
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error("chrome.storage.local.remove failed"));
+    }
   });
 }
 
 export function runtimeSendMessage<T>(message: unknown): Promise<T> {
   return new Promise((resolve, reject) => {
-    if (!hasChromeRuntime()) {
+    if (!hasChromeRuntime() || typeof chrome.runtime.sendMessage !== "function") {
       reject(new Error("chrome.runtime is not available"));
       return;
     }
 
-    chrome.runtime.sendMessage(message, (response) => {
-      const error = getLastErrorMessage();
-      if (error) {
-        reject(new Error(error));
-        return;
-      }
-      resolve(response as T);
-    });
+    try {
+      chrome.runtime.sendMessage(message, (response) => {
+        const error = getLastErrorMessage();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve(response as T);
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error("chrome.runtime.sendMessage failed"));
+    }
   });
 }
 
 export function runtimeOpenOptionsPage(): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (!hasChromeRuntime()) {
+    if (!hasChromeRuntime() || typeof chrome.runtime.openOptionsPage !== "function") {
       reject(new Error("chrome.runtime is not available"));
       return;
     }
 
-    chrome.runtime.openOptionsPage(() => {
-      const error = getLastErrorMessage();
-      if (error) {
-        reject(new Error(error));
-        return;
-      }
-      resolve();
-    });
+    try {
+      chrome.runtime.openOptionsPage(() => {
+        const error = getLastErrorMessage();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve();
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error("chrome.runtime.openOptionsPage failed"));
+    }
   });
 }
 
@@ -101,7 +121,11 @@ export function runtimeManifestVersion(): string | null {
     return null;
   }
 
-  return chrome.runtime.getManifest().version ?? null;
+  try {
+    return chrome.runtime.getManifest().version ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export function tabsQuery(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]> {
@@ -111,14 +135,18 @@ export function tabsQuery(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs
       return;
     }
 
-    chrome.tabs.query(queryInfo, (tabs) => {
-      const error = getLastErrorMessage();
-      if (error) {
-        reject(new Error(error));
-        return;
-      }
-      resolve(tabs);
-    });
+    try {
+      chrome.tabs.query(queryInfo, (tabs) => {
+        const error = getLastErrorMessage();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve(tabs);
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error("chrome.tabs.query failed"));
+    }
   });
 }
 
@@ -129,14 +157,18 @@ export function tabsSendMessage<T>(tabId: number, message: unknown): Promise<T> 
       return;
     }
 
-    chrome.tabs.sendMessage(tabId, message, (response) => {
-      const error = getLastErrorMessage();
-      if (error) {
-        reject(new Error(error));
-        return;
-      }
-      resolve(response as T);
-    });
+    try {
+      chrome.tabs.sendMessage(tabId, message, (response) => {
+        const error = getLastErrorMessage();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve(response as T);
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error("chrome.tabs.sendMessage failed"));
+    }
   });
 }
 
@@ -147,13 +179,17 @@ export function scriptingExecuteScript(options: chrome.scripting.ScriptInjection
       return;
     }
 
-    chrome.scripting.executeScript(options, () => {
-      const error = getLastErrorMessage();
-      if (error) {
-        reject(new Error(error));
-        return;
-      }
-      resolve();
-    });
+    try {
+      chrome.scripting.executeScript(options, () => {
+        const error = getLastErrorMessage();
+        if (error) {
+          reject(new Error(error));
+          return;
+        }
+        resolve();
+      });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error("chrome.scripting.executeScript failed"));
+    }
   });
 }

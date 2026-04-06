@@ -50,8 +50,28 @@ async function runMutation<T>(
   action: () => Promise<T>,
 ): Promise<T> {
   const lockManager = globalThis.navigator?.locks;
-  if (lockManager) {
-    return lockManager.request(STORAGE_WRITE_LOCK_NAME, () => action());
+  if (lockManager && typeof lockManager.request === "function") {
+    let actionStarted = false;
+    let lockRequest: Promise<T>;
+    try {
+      lockRequest = lockManager.request(STORAGE_WRITE_LOCK_NAME, () => {
+        actionStarted = true;
+        return action();
+      });
+    } catch {
+      // Fall through to the serialized background path when the lock manager is present but unusable.
+      lockRequest = null as never;
+    }
+
+    if (lockRequest) {
+      try {
+        return await lockRequest;
+      } catch (error) {
+        if (actionStarted) {
+          throw error;
+        }
+      }
+    }
   }
 
   if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {

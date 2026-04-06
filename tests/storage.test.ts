@@ -1,11 +1,13 @@
 import {
   clearAllData,
+  deleteProfile,
   exportAppData,
   getFormHistory,
   getPresetByFormKey,
   getProfiles,
   getSettings,
   importAppData,
+  saveHistoryEntry,
   savePreset,
   saveProfile,
   saveSettings,
@@ -208,6 +210,84 @@ describe("storage", () => {
     });
   });
 
+  it("falls back to background mutations when navigator.locks is present without a request function", async () => {
+    vi.stubGlobal("navigator", { locks: {} });
+
+    await saveProfile({
+      id: "profile-1",
+      name: "Personal",
+      values: { email: "toufiq@example.com" },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Personal",
+        values: { email: "toufiq@example.com" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("falls back to background mutations when navigator.locks.request throws synchronously", async () => {
+    vi.stubGlobal("navigator", {
+      locks: {
+        request() {
+          throw new Error("locks failed");
+        },
+      },
+    });
+
+    await saveProfile({
+      id: "profile-1",
+      name: "Personal",
+      values: { email: "toufiq@example.com" },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Personal",
+        values: { email: "toufiq@example.com" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
+  it("falls back to background mutations when navigator.locks.request rejects before starting the action", async () => {
+    vi.stubGlobal("navigator", {
+      locks: {
+        request() {
+          return Promise.reject(new Error("locks failed"));
+        },
+      },
+    });
+
+    await saveProfile({
+      id: "profile-1",
+      name: "Personal",
+      values: { email: "toufiq@example.com" },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    expect(await getProfiles()).toEqual([
+      {
+        id: "profile-1",
+        name: "Personal",
+        values: { email: "toufiq@example.com" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+  });
+
   it("exports and clears all data", async () => {
     await saveProfile({
       id: "profile-1",
@@ -398,6 +478,58 @@ describe("storage", () => {
       values: {},
       mappings: {
         email: "__no_mapping__",
+      },
+      mappingSchemaVersion: 2,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+  });
+
+  it("drops explicit unmapped entries when the same field also has a saved mapping", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Registration",
+        formKey: "form-1",
+        formTitle: "Registration",
+        fields: [
+          {
+            id: "email",
+            label: "Email",
+            normalizedLabel: "email",
+            type: "text",
+            required: true,
+          },
+        ],
+        values: {},
+        mappings: {
+          email: "email",
+        },
+        unmappedFieldIds: ["email"],
+        mappingSchemaVersion: 2,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ] satisfies FormPreset[];
+
+    expect(await getPresetByFormKey("form-1")).toEqual({
+      id: "preset-1",
+      name: "Registration",
+      formKey: "form-1",
+      formTitle: "Registration",
+      fields: [
+        {
+          id: "email",
+          label: "Email",
+          normalizedLabel: "email",
+          type: "text",
+          required: true,
+        },
+      ],
+      values: {},
+      mappings: {
+        email: "email",
       },
       mappingSchemaVersion: 2,
       createdAt: 1,
@@ -859,6 +991,58 @@ describe("storage", () => {
     ]);
   });
 
+  it("deduplicates stored presets by id and keeps the newest one", async () => {
+    const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
+    chromeWithState.state.presets = [
+      {
+        id: "preset-1",
+        name: "Old Preset",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        fields: [],
+        values: { fullName: "Old" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        id: "preset-1",
+        name: "New Preset",
+        formKey: "form-2",
+        formTitle: "Form 2",
+        fields: [],
+        values: { fullName: "New" },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ];
+
+    expect(await getPresetByFormKey("form-1")).toBeNull();
+    expect(await getPresetByFormKey("form-2")).toEqual({
+      id: "preset-1",
+      name: "New Preset",
+      formKey: "form-2",
+      formTitle: "Form 2",
+      fields: [],
+      values: { fullName: "New" },
+      createdAt: 2,
+      updatedAt: 2,
+    });
+
+    const exported = await exportAppData();
+    expect(exported.presets).toEqual([
+      {
+        id: "preset-1",
+        name: "New Preset",
+        formKey: "form-2",
+        formTitle: "Form 2",
+        fields: [],
+        values: { fullName: "New" },
+        createdAt: 2,
+        updatedAt: 2,
+      },
+    ]);
+  });
+
   it("clears a stale default profile id when the profile no longer exists", async () => {
     const chromeWithState = chrome as typeof chrome & { state: Record<string, unknown> };
     chromeWithState.state.profiles = [
@@ -891,6 +1075,108 @@ describe("storage", () => {
       confirmBeforeFill: true,
       showBackupSection: false,
     });
+  });
+
+  it("clears deleted profile references from saved form history", async () => {
+    await saveProfile({
+      id: "profile-1",
+      name: "Alpha",
+      values: { fullName: "Toufiq Hasan" },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    await importAppData({
+      version: 1,
+      profiles: [
+        {
+          id: "profile-1",
+          name: "Alpha",
+          values: { fullName: "Toufiq Hasan" },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      history: [
+        {
+          id: "history-1",
+          formKey: "form-1",
+          formTitle: "Form 1",
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Alpha",
+          lastFilledAt: 10,
+          filledFieldCount: 2,
+          skippedFieldCount: 0,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    await deleteProfile("profile-1");
+
+    expect(await getFormHistory()).toEqual([
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
+        lastFilledAt: 10,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ]);
+
+    const exported = await exportAppData();
+    expect(exported.settings).toEqual({
+      defaultProfileId: null,
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+    expect(exported.history).toEqual([
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
+        lastFilledAt: 10,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ]);
+  });
+
+  it("drops stale profile references when saving a new history entry", async () => {
+    await saveHistoryEntry({
+      id: "history-1",
+      formKey: "form-1",
+      formTitle: "Form 1",
+      lastUsedProfileId: "missing-profile",
+      lastUsedProfileName: "Ghost",
+      lastFilledAt: 10,
+      filledFieldCount: 2,
+      skippedFieldCount: 0,
+    });
+
+    expect(await getFormHistory()).toEqual([
+      {
+        id: "history-1",
+        formKey: "form-1",
+        formTitle: "Form 1",
+        lastUsedProfileId: null,
+        lastUsedProfileName: null,
+        lastFilledAt: 10,
+        filledFieldCount: 2,
+        skippedFieldCount: 0,
+      },
+    ]);
   });
 
   it("normalizes stale default profile ids on settings save too", async () => {

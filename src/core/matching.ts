@@ -1,4 +1,5 @@
 import type { DetectedField, FieldValue, FormHistoryEntry, Profile } from "./types";
+import { normalizeFieldValueForField } from "./field-value-normalization";
 import { normalizeText, profileKeyCandidates, tokenize } from "./normalization";
 
 export interface MatchedFieldValue {
@@ -80,7 +81,7 @@ export function rankProfilesForFields(
       }
 
       const previousEntry = latestHistoryByProfileId.get(entry.lastUsedProfileId);
-      if (!previousEntry || entry.lastFilledAt > previousEntry.lastFilledAt) {
+      if (!previousEntry || entry.lastFilledAt >= previousEntry.lastFilledAt) {
         latestHistoryByProfileId.set(entry.lastUsedProfileId, entry);
       }
     }
@@ -94,6 +95,10 @@ export function rankProfilesForFields(
       for (const field of fields) {
         let bestFieldScore = 0;
         for (const key of Object.keys(profile.values)) {
+          if (normalizeFieldValueForField(field, profile.values[key]) === undefined) {
+            continue;
+          }
+
           for (const candidate of getProfileCandidates(profile, key)) {
             if (candidate === field.normalizedLabel) {
               bestFieldScore = 1;
@@ -115,7 +120,10 @@ export function rankProfilesForFields(
       }
 
       const historyEntry = latestHistoryByProfileId.get(profile.id);
-      const historyBoost = historyEntry ? 1 + Math.min(1, matchedFieldCount / Math.max(fields.length, 1)) : 0;
+      const historyBoost =
+        historyEntry && matchedFieldCount > 0
+          ? 1 + Math.min(1, matchedFieldCount / Math.max(fields.length, 1))
+          : 0;
 
       return {
         profile,
@@ -161,7 +169,26 @@ export function buildInitialFieldValues(
       values[field.id] = presetValue;
     }
 
-    const mappedKey = profile ? (presetMappings?.[field.id] ?? suggestProfileKey(field, profile)) : null;
+    const presetMappedKey = presetMappings?.[field.id];
+    const compatiblePresetMappedKey =
+      profile && presetMappedKey
+        ? normalizeFieldValueForField(field, profile.values[presetMappedKey]) !== undefined
+          ? presetMappedKey
+          : null
+        : null;
+    const suggestedMappedKey = profile
+      ? suggestProfileKey(field, profile)
+      : null;
+    const compatibleSuggestedMappedKey =
+      profile && suggestedMappedKey
+        ? normalizeFieldValueForField(field, profile.values[suggestedMappedKey]) !== undefined
+          ? suggestedMappedKey
+          : null
+        : null;
+    const mappedKey = profile
+      ? (compatiblePresetMappedKey ??
+          compatibleSuggestedMappedKey)
+      : null;
     if (!mappedKey) {
       continue;
     }
@@ -172,9 +199,9 @@ export function buildInitialFieldValues(
       continue;
     }
 
-    const candidate = profile.values[mappedKey];
+    const candidate = normalizeFieldValueForField(field, profile.values[mappedKey]);
     if (candidate !== undefined) {
-      values[field.id] = candidate as FieldValue;
+      values[field.id] = candidate;
     }
   }
 

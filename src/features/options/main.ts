@@ -310,6 +310,15 @@ function createProfileCard(profile: Profile): HTMLElement {
     void deleteProfile(profile.id)
       .then(() => {
         state.profiles = state.profiles.filter((item) => item.id !== profile.id);
+        state.history = state.history.map((entry) =>
+          entry.lastUsedProfileId === profile.id
+            ? {
+                ...entry,
+                lastUsedProfileId: null,
+                lastUsedProfileName: null,
+              }
+            : entry,
+        );
         if (state.settings.defaultProfileId === profile.id) {
           state.settings = {
             ...state.settings,
@@ -317,6 +326,7 @@ function createProfileCard(profile: Profile): HTMLElement {
           };
         }
         renderDefaultProfileOptions();
+        renderHistory();
         card.remove();
         if (!state.profiles.length) {
           renderProfiles();

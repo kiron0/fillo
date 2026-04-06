@@ -12,10 +12,12 @@ const optionsHtml = `
     <button id="add-profile"></button>
     <div id="profiles"></div>
     <div id="presets"></div>
+    <div id="history"></div>
     <div id="backup-section" class="hidden"></div>
     <button id="export-data"></button>
     <button id="import-data"></button>
     <button id="clear-data"></button>
+    <button id="clear-history"></button>
     <textarea id="backup-payload"></textarea>
   </body>
 </html>
@@ -214,6 +216,54 @@ describe("options", () => {
 
     await vi.waitFor(() => {
       expect(secondCardNameInput.value).toBe("Beta Draft");
+    });
+  });
+
+  it("clears deleted profile names from rendered history immediately", async () => {
+    const profiles: Profile[] = [
+      {
+        id: "profile-1",
+        name: "Alpha",
+        values: { fullName: "Alice" },
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+
+    const mock = createStorageMock({
+      profiles,
+      presets: [],
+      history: [
+        {
+          id: "history-1",
+          formKey: "form-1",
+          formTitle: "Registration",
+          lastUsedProfileId: "profile-1",
+          lastUsedProfileName: "Alpha",
+          lastFilledAt: 1,
+          filledFieldCount: 2,
+          skippedFieldCount: 0,
+        },
+      ],
+      settings: {
+        defaultProfileId: "profile-1",
+        autoLoadMatchingProfile: true,
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      },
+    });
+
+    vi.stubGlobal("chrome", mock.chrome);
+
+    await loadOptionsModule();
+
+    expect(document.querySelector("#history")?.textContent).toContain("with Alpha");
+
+    const deleteButton = document.querySelector<HTMLButtonElement>(".card-actions button:last-child")!;
+    deleteButton.click();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector("#history")?.textContent).not.toContain("with Alpha");
     });
   });
 

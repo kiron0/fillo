@@ -25,6 +25,31 @@ function isStringRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function hasOwnKey(value: Record<string, unknown>, key: string): boolean {
+  return Object.hasOwn(value, key);
+}
+
+function hasOwnString(value: Record<string, unknown>, key: string): boolean {
+  return hasOwnKey(value, key) && typeof value[key] === "string";
+}
+
+function hasOwnFiniteNumber(value: Record<string, unknown>, key: string): boolean {
+  return hasOwnKey(value, key) && isFiniteNumber(value[key]);
+}
+
+function optionalOwnString(value: Record<string, unknown>, key: string): boolean {
+  return !(key in value) || (hasOwnKey(value, key) && (value[key] === undefined || typeof value[key] === "string"));
+}
+
+function optionalOwnStringArray(value: Record<string, unknown>, key: string): boolean {
+  const fieldValue = value[key];
+  return (
+    !(key in value) ||
+    (hasOwnKey(value, key) &&
+      (fieldValue === undefined || (Array.isArray(fieldValue) && fieldValue.every((item) => typeof item === "string"))))
+  );
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -56,52 +81,62 @@ function isDetectedField(value: unknown): boolean {
 
   const type = value.type;
   const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
+  const gridRows = value.gridRows;
+  const gridRowIds = value.gridRowIds;
   const gridMetadataValid =
     type === "grid"
-      ? Array.isArray(value.gridRows) &&
-        value.gridRows.every((row) => typeof row === "string") &&
-        (value.gridRowIds === undefined ||
-          (Array.isArray(value.gridRowIds) &&
-            value.gridRowIds.length === value.gridRows.length &&
-            value.gridRowIds.every((rowId) => typeof rowId === "string"))) &&
+      ? hasOwnKey(value, "gridRows") &&
+        Array.isArray(gridRows) &&
+        gridRows.every((row) => typeof row === "string") &&
+        (!("gridRowIds" in value) ||
+          (hasOwnKey(value, "gridRowIds") &&
+            (gridRowIds === undefined ||
+              (Array.isArray(gridRowIds) &&
+                gridRowIds.length === gridRows.length &&
+                gridRowIds.every((rowId) => typeof rowId === "string"))))) &&
+        hasOwnKey(value, "gridMode") &&
         (value.gridMode === "radio" || value.gridMode === "checkbox")
-      : value.gridRows === undefined && value.gridRowIds === undefined && value.gridMode === undefined;
+      : !("gridRows" in value) && !("gridRowIds" in value) && !("gridMode" in value);
   const scaleMetadataValid =
     type === "scale"
-      ? (value.scaleLowLabel === undefined || typeof value.scaleLowLabel === "string") &&
-        (value.scaleHighLabel === undefined || typeof value.scaleHighLabel === "string")
-      : value.scaleLowLabel === undefined && value.scaleHighLabel === undefined;
+      ? optionalOwnString(value, "scaleLowLabel") && optionalOwnString(value, "scaleHighLabel")
+      : !("scaleLowLabel" in value) && !("scaleHighLabel" in value);
 
   return (
-    typeof value.id === "string" &&
-    typeof value.label === "string" &&
-    typeof value.normalizedLabel === "string" &&
+    hasOwnString(value, "id") &&
+    hasOwnString(value, "label") &&
+    hasOwnString(value, "normalizedLabel") &&
+    hasOwnKey(value, "required") &&
     typeof value.required === "boolean" &&
+    hasOwnKey(value, "type") &&
     typeof type === "string" &&
     allowedTypes.has(type) &&
-    (value.textSubtype === undefined ||
-      value.textSubtype === "text" ||
-      value.textSubtype === "email" ||
-      value.textSubtype === "number" ||
-      value.textSubtype === "tel" ||
-      value.textSubtype === "url") &&
-    (value.options === undefined || (Array.isArray(value.options) && value.options.every((option) => typeof option === "string"))) &&
-    (value.otherOption === undefined || typeof value.otherOption === "string") &&
+    (!("textSubtype" in value) ||
+      (hasOwnKey(value, "textSubtype") &&
+        (value.textSubtype === "text" ||
+          value.textSubtype === "email" ||
+          value.textSubtype === "number" ||
+          value.textSubtype === "tel" ||
+          value.textSubtype === "url"))) &&
+    optionalOwnStringArray(value, "options") &&
+    optionalOwnString(value, "otherOption") &&
     gridMetadataValid &&
     scaleMetadataValid &&
-    (value.sectionKey === undefined || typeof value.sectionKey === "string") &&
-    (value.sectionTitle === undefined || typeof value.sectionTitle === "string") &&
-    (value.helpText === undefined || typeof value.helpText === "string")
+    optionalOwnString(value, "sectionKey") &&
+    optionalOwnString(value, "sectionTitle") &&
+    optionalOwnString(value, "helpText")
   );
 }
 
-function isFieldValue(value: unknown): boolean {
+export function isFieldValue(value: unknown): boolean {
   return (
     isPrimitiveFieldValue(value) ||
     (Array.isArray(value) && value.every((item) => typeof item === "string")) ||
     isChoiceWithOtherValue(value) ||
     (isStringRecord(value) &&
+      Object.hasOwn(value, "kind") &&
       value.kind === "grid" &&
+      Object.hasOwn(value, "rows") &&
       isStringRecord(value.rows) &&
       Object.values(value.rows).every(
         (rowValue) =>
@@ -113,26 +148,31 @@ function isFieldValue(value: unknown): boolean {
 function isAppSettings(value: unknown): value is AppSettings {
   return (
     isStringRecord(value) &&
-    (value.defaultProfileId === null || typeof value.defaultProfileId === "string" || value.defaultProfileId === undefined) &&
+    (!("defaultProfileId" in value) ||
+      (hasOwnKey(value, "defaultProfileId") && (value.defaultProfileId === null || typeof value.defaultProfileId === "string"))) &&
+    hasOwnKey(value, "autoLoadMatchingProfile") &&
     typeof value.autoLoadMatchingProfile === "boolean" &&
+    hasOwnKey(value, "confirmBeforeFill") &&
     typeof value.confirmBeforeFill === "boolean" &&
+    hasOwnKey(value, "showBackupSection") &&
     typeof value.showBackupSection === "boolean"
   );
 }
 
 function isProfile(value: unknown): value is Profile {
-  if (!isStringRecord(value) || !isStringRecord(value.values)) {
+  if (!isStringRecord(value) || !hasOwnKey(value, "values") || !isStringRecord(value.values)) {
     return false;
   }
 
   return (
-    typeof value.id === "string" &&
-    typeof value.name === "string" &&
-    isFiniteNumber(value.createdAt) &&
-    isFiniteNumber(value.updatedAt) &&
+    hasOwnString(value, "id") &&
+    hasOwnString(value, "name") &&
+    hasOwnFiniteNumber(value, "createdAt") &&
+    hasOwnFiniteNumber(value, "updatedAt") &&
     Object.values(value.values).every(isProfileValue) &&
-    (value.aliases === undefined ||
-      (isStringRecord(value.aliases) &&
+    (!("aliases" in value) ||
+      (hasOwnKey(value, "aliases") &&
+        isStringRecord(value.aliases) &&
         Object.values(value.aliases).every(
           (aliasList) => Array.isArray(aliasList) && aliasList.every((alias) => typeof alias === "string"),
         )))
@@ -160,62 +200,70 @@ function normalizeProfile(profile: Profile): Profile {
 function isPresetSectionSnapshot(value: unknown): boolean {
   return (
     isStringRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.title === "string" &&
-    isFiniteNumber(value.updatedAt) &&
+    hasOwnString(value, "id") &&
+    hasOwnString(value, "title") &&
+    hasOwnFiniteNumber(value, "updatedAt") &&
+    hasOwnKey(value, "fieldIds") &&
     Array.isArray(value.fieldIds) &&
     value.fieldIds.every((item) => typeof item === "string")
   );
 }
 
 function isFormPreset(value: unknown): value is FormPreset {
-  if (!isStringRecord(value) || !isStringRecord(value.values)) {
+  if (!isStringRecord(value) || !hasOwnKey(value, "values") || !isStringRecord(value.values)) {
     return false;
   }
 
   return (
-    typeof value.id === "string" &&
-    typeof value.formKey === "string" &&
-    typeof value.name === "string" &&
-    isFiniteNumber(value.createdAt) &&
-    isFiniteNumber(value.updatedAt) &&
+    hasOwnString(value, "id") &&
+    hasOwnString(value, "formKey") &&
+    hasOwnString(value, "name") &&
+    hasOwnFiniteNumber(value, "createdAt") &&
+    hasOwnFiniteNumber(value, "updatedAt") &&
+    hasOwnKey(value, "fields") &&
     Array.isArray(value.fields) &&
     value.fields.every(isDetectedField) &&
     Object.values(value.values).every(isFieldValue) &&
-    (value.formTitle === undefined || typeof value.formTitle === "string") &&
-    (value.formUrl === undefined || typeof value.formUrl === "string") &&
-    (value.mappings === undefined ||
-      (isStringRecord(value.mappings) && Object.values(value.mappings).every((item) => typeof item === "string"))) &&
-    (value.unmappedFieldIds === undefined ||
-      (Array.isArray(value.unmappedFieldIds) && value.unmappedFieldIds.every((item) => typeof item === "string"))) &&
-    (value.excludedFieldIds === undefined ||
-      (Array.isArray(value.excludedFieldIds) && value.excludedFieldIds.every((item) => typeof item === "string"))) &&
-    (value.sections === undefined || (Array.isArray(value.sections) && value.sections.every(isPresetSectionSnapshot))) &&
-    (value.mappingSchemaVersion === undefined || value.mappingSchemaVersion === 2)
+    optionalOwnString(value, "formTitle") &&
+    optionalOwnString(value, "formUrl") &&
+    (!("mappings" in value) ||
+      (hasOwnKey(value, "mappings") && isStringRecord(value.mappings) && Object.values(value.mappings).every((item) => typeof item === "string"))) &&
+    (!("unmappedFieldIds" in value) ||
+      (hasOwnKey(value, "unmappedFieldIds") && Array.isArray(value.unmappedFieldIds) && value.unmappedFieldIds.every((item) => typeof item === "string"))) &&
+    (!("excludedFieldIds" in value) ||
+      (hasOwnKey(value, "excludedFieldIds") && Array.isArray(value.excludedFieldIds) && value.excludedFieldIds.every((item) => typeof item === "string"))) &&
+    (!("sections" in value) || (hasOwnKey(value, "sections") && Array.isArray(value.sections) && value.sections.every(isPresetSectionSnapshot))) &&
+    (!("mappingSchemaVersion" in value) || (hasOwnKey(value, "mappingSchemaVersion") && value.mappingSchemaVersion === 2))
   );
 }
 
 function isFormHistoryEntry(value: unknown): value is FormHistoryEntry {
   return (
     isStringRecord(value) &&
-    typeof value.id === "string" &&
-    typeof value.formKey === "string" &&
-    typeof value.formTitle === "string" &&
-    (value.formUrl === undefined || typeof value.formUrl === "string") &&
+    hasOwnString(value, "id") &&
+    hasOwnString(value, "formKey") &&
+    hasOwnString(value, "formTitle") &&
+    optionalOwnString(value, "formUrl") &&
+    hasOwnKey(value, "lastUsedProfileId") &&
     (value.lastUsedProfileId === null || typeof value.lastUsedProfileId === "string") &&
-    (value.lastUsedProfileName === undefined || value.lastUsedProfileName === null || typeof value.lastUsedProfileName === "string") &&
-    isFiniteNumber(value.lastFilledAt) &&
-    isFiniteNumber(value.filledFieldCount) &&
-    isFiniteNumber(value.skippedFieldCount)
+    (!("lastUsedProfileName" in value) ||
+      (hasOwnKey(value, "lastUsedProfileName") && (value.lastUsedProfileName === null || typeof value.lastUsedProfileName === "string"))) &&
+    hasOwnFiniteNumber(value, "lastFilledAt") &&
+    hasOwnFiniteNumber(value, "filledFieldCount") &&
+    hasOwnFiniteNumber(value, "skippedFieldCount")
   );
 }
 
 function isExportSelection(value: unknown): value is ExportSelection {
   return (
     isStringRecord(value) &&
+    hasOwnKey(value, "profiles") &&
     typeof value.profiles === "boolean" &&
+    hasOwnKey(value, "presets") &&
     typeof value.presets === "boolean" &&
+    hasOwnKey(value, "settings") &&
     typeof value.settings === "boolean" &&
+    hasOwnKey(value, "history") &&
     typeof value.history === "boolean"
   );
 }
@@ -223,23 +271,26 @@ function isExportSelection(value: unknown): value is ExportSelection {
 function isPartialExportSelection(value: unknown): value is Partial<ExportSelection> {
   return (
     isStringRecord(value) &&
-    (value.profiles === undefined || typeof value.profiles === "boolean") &&
-    (value.presets === undefined || typeof value.presets === "boolean") &&
-    (value.settings === undefined || typeof value.settings === "boolean") &&
-    (value.history === undefined || typeof value.history === "boolean")
+    (!("profiles" in value) || (hasOwnKey(value, "profiles") && typeof value.profiles === "boolean")) &&
+    (!("presets" in value) || (hasOwnKey(value, "presets") && typeof value.presets === "boolean")) &&
+    (!("settings" in value) || (hasOwnKey(value, "settings") && typeof value.settings === "boolean")) &&
+    (!("history" in value) || (hasOwnKey(value, "history") && typeof value.history === "boolean"))
   );
 }
 
 export function validateImportedAppData(payload: unknown): payload is ImportedAppData {
   return (
     isStringRecord(payload) &&
+    hasOwnKey(payload, "version") &&
     payload.version === 1 &&
-    (payload.profiles === undefined || (Array.isArray(payload.profiles) && payload.profiles.every(isProfile))) &&
-    (payload.presets === undefined || (Array.isArray(payload.presets) && payload.presets.every(isFormPreset))) &&
-    (payload.settings === undefined || isAppSettings(payload.settings)) &&
-    (payload.history === undefined || (Array.isArray(payload.history) && payload.history.every(isFormHistoryEntry))) &&
-    (payload.selection === undefined ||
-      (isPartialExportSelection(payload.selection) && isExportSelection({ ...DEFAULT_EXPORT_SELECTION, ...payload.selection })))
+    (!("profiles" in payload) || (hasOwnKey(payload, "profiles") && Array.isArray(payload.profiles) && payload.profiles.every(isProfile))) &&
+    (!("presets" in payload) || (hasOwnKey(payload, "presets") && Array.isArray(payload.presets) && payload.presets.every(isFormPreset))) &&
+    (!("settings" in payload) || (hasOwnKey(payload, "settings") && isAppSettings(payload.settings))) &&
+    (!("history" in payload) || (hasOwnKey(payload, "history") && Array.isArray(payload.history) && payload.history.every(isFormHistoryEntry))) &&
+    (!("selection" in payload) ||
+      (hasOwnKey(payload, "selection") &&
+        isPartialExportSelection(payload.selection) &&
+        isExportSelection({ ...DEFAULT_EXPORT_SELECTION, ...payload.selection })))
   );
 }
 

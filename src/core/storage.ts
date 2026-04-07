@@ -14,6 +14,7 @@ import {
   savePresetDirect,
   saveProfileDirect,
   saveSettingsDirect,
+  validateImportedAppData,
 } from "./storage-ops";
 import { DEFAULT_EXPORT_SELECTION } from "./types";
 import type {
@@ -31,18 +32,23 @@ import type { BackgroundRequest } from "./types";
 const STORAGE_WRITE_LOCK_NAME = "fillo-storage-write";
 const UNSUPPORTED_IMPORT_ERROR = "Import payload must be a version 1 backup.";
 const MALFORMED_IMPORT_ERROR = "Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.";
+const MALFORMED_MUTATION_ERROR = "Storage mutation payload must be well-formed.";
 
 function isStringRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isOwnOptionalBoolean(value: Record<string, unknown>, key: keyof ExportSelection): boolean {
+  return !(key in value) || (Object.hasOwn(value, key) && typeof value[key] === "boolean");
+}
+
 function isPartialExportSelection(value: unknown): value is Partial<ExportSelection> {
   return (
     isStringRecord(value) &&
-    ((value as Partial<ExportSelection>).profiles === undefined || typeof (value as Partial<ExportSelection>).profiles === "boolean") &&
-    ((value as Partial<ExportSelection>).presets === undefined || typeof (value as Partial<ExportSelection>).presets === "boolean") &&
-    ((value as Partial<ExportSelection>).settings === undefined || typeof (value as Partial<ExportSelection>).settings === "boolean") &&
-    ((value as Partial<ExportSelection>).history === undefined || typeof (value as Partial<ExportSelection>).history === "boolean")
+    isOwnOptionalBoolean(value, "profiles") &&
+    isOwnOptionalBoolean(value, "presets") &&
+    isOwnOptionalBoolean(value, "settings") &&
+    isOwnOptionalBoolean(value, "history")
   );
 }
 
@@ -102,10 +108,18 @@ export async function getProfiles(): Promise<Profile[]> {
 }
 
 export async function saveProfile(profile: Profile): Promise<void> {
+  if (!validateImportedAppData({ version: 1, profiles: [profile] })) {
+    throw new Error(MALFORMED_MUTATION_ERROR);
+  }
+
   await runMutation({ kind: "save_profile", profile }, () => saveProfileDirect(profile));
 }
 
 export async function deleteProfile(profileId: string): Promise<void> {
+  if (typeof profileId !== "string") {
+    throw new Error(MALFORMED_MUTATION_ERROR);
+  }
+
   await runMutation({ kind: "delete_profile", profileId }, () => deleteProfileDirect(profileId));
 }
 
@@ -118,10 +132,18 @@ export async function getPresetByFormKey(formKey: string): Promise<FormPreset | 
 }
 
 export async function savePreset(preset: FormPreset): Promise<void> {
+  if (!validateImportedAppData({ version: 1, presets: [preset] })) {
+    throw new Error(MALFORMED_MUTATION_ERROR);
+  }
+
   await runMutation({ kind: "save_preset", preset }, () => savePresetDirect(preset));
 }
 
 export async function deletePreset(presetId: string): Promise<void> {
+  if (typeof presetId !== "string") {
+    throw new Error(MALFORMED_MUTATION_ERROR);
+  }
+
   await runMutation({ kind: "delete_preset", presetId }, () => deletePresetDirect(presetId));
 }
 
@@ -134,10 +156,18 @@ export async function getFormHistory(): Promise<FormHistoryEntry[]> {
 }
 
 export async function saveSettings(settings: AppSettings): Promise<void> {
+  if (!validateImportedAppData({ version: 1, settings })) {
+    throw new Error(MALFORMED_MUTATION_ERROR);
+  }
+
   await runMutation({ kind: "save_settings", settings }, () => saveSettingsDirect(settings));
 }
 
 export async function saveHistoryEntry(entry: FormHistoryEntry): Promise<void> {
+  if (!validateImportedAppData({ version: 1, history: [entry] })) {
+    throw new Error(MALFORMED_MUTATION_ERROR);
+  }
+
   await runMutation({ kind: "save_history_entry", entry }, () => saveHistoryEntryDirect(entry));
 }
 

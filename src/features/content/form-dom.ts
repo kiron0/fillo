@@ -674,9 +674,9 @@ function isGridValue(value: FieldValue): value is GridValue {
     typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    "kind" in value &&
+    Object.hasOwn(value, "kind") &&
     value.kind === "grid" &&
-    "rows" in value &&
+    Object.hasOwn(value, "rows") &&
     typeof value.rows === "object" &&
     value.rows !== null &&
     !Array.isArray(value.rows) &&
@@ -859,11 +859,11 @@ function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValu
     typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    "kind" in value &&
+    Object.hasOwn(value, "kind") &&
     value.kind === "choice_with_other" &&
-    "selected" in value &&
+    Object.hasOwn(value, "selected") &&
     (typeof value.selected === "string" || (Array.isArray(value.selected) && value.selected.every((item) => typeof item === "string"))) &&
-    "otherText" in value &&
+    Object.hasOwn(value, "otherText") &&
     typeof value.otherText === "string"
   );
 }

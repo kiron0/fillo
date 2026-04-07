@@ -209,97 +209,138 @@ async function sendBackgroundMessage<T>(
 }
 
 function isFillResult(value: unknown): value is FillResult {
+  if (!isStringRecord(value)) {
+    return false;
+  }
+
   return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    Array.isArray((value as FillResult).filledFieldIds) &&
-    (value as FillResult).filledFieldIds.every((fieldId) => typeof fieldId === "string") &&
-    Array.isArray((value as FillResult).skippedFieldIds) &&
-    (value as FillResult).skippedFieldIds.every((fieldId) => typeof fieldId === "string")
+    hasOwnKey(value, "filledFieldIds") &&
+    Array.isArray(value.filledFieldIds) &&
+    value.filledFieldIds.every((fieldId) => typeof fieldId === "string") &&
+    hasOwnKey(value, "skippedFieldIds") &&
+    Array.isArray(value.skippedFieldIds) &&
+    value.skippedFieldIds.every((fieldId) => typeof fieldId === "string")
+  );
+}
+
+function isStringRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOwnKey(value: Record<string, unknown>, key: string): boolean {
+  return Object.hasOwn(value, key);
+}
+
+function hasOwnString(value: Record<string, unknown>, key: string): boolean {
+  return hasOwnKey(value, key) && typeof value[key] === "string";
+}
+
+function hasOwnBoolean(value: Record<string, unknown>, key: string): boolean {
+  return hasOwnKey(value, key) && typeof value[key] === "boolean";
+}
+
+function hasOwnOptionalString(value: Record<string, unknown>, key: string): boolean {
+  return !(key in value) || (hasOwnKey(value, key) && (value[key] === undefined || typeof value[key] === "string"));
+}
+
+function hasOwnOptionalStringArray(value: Record<string, unknown>, key: string): boolean {
+  const fieldValue = value[key];
+  return (
+    !(key in value) ||
+    (hasOwnKey(value, key) &&
+      (fieldValue === undefined || (Array.isArray(fieldValue) && fieldValue.every((item) => typeof item === "string"))))
   );
 }
 
 function isDetectedField(value: unknown): value is DetectedField {
   const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isStringRecord(value)) {
     return false;
   }
 
-  const field = value as DetectedField;
+  const field = value;
+  const gridRows = field.gridRows;
+  const gridRowIds = field.gridRowIds;
   const gridMetadataValid =
     field.type === "grid"
-      ? Array.isArray(field.gridRows) &&
-        field.gridRows.every((row) => typeof row === "string") &&
-        (field.gridRowIds === undefined ||
-          (Array.isArray(field.gridRowIds) &&
-            field.gridRowIds.length === field.gridRows.length &&
-            field.gridRowIds.every((rowId) => typeof rowId === "string"))) &&
+      ? hasOwnKey(field, "gridRows") &&
+        Array.isArray(gridRows) &&
+        gridRows.every((row) => typeof row === "string") &&
+        (!("gridRowIds" in field) ||
+          (hasOwnKey(field, "gridRowIds") &&
+            (gridRowIds === undefined ||
+              (Array.isArray(gridRowIds) &&
+                gridRowIds.length === gridRows.length &&
+                gridRowIds.every((rowId) => typeof rowId === "string"))))) &&
+        hasOwnKey(field, "gridMode") &&
         (field.gridMode === "radio" || field.gridMode === "checkbox")
-      : field.gridRows === undefined && field.gridRowIds === undefined && field.gridMode === undefined;
+      : !("gridRows" in field) && !("gridRowIds" in field) && !("gridMode" in field);
   const scaleMetadataValid =
     field.type === "scale"
-      ? (field.scaleLowLabel === undefined || typeof field.scaleLowLabel === "string") &&
-        (field.scaleHighLabel === undefined || typeof field.scaleHighLabel === "string")
-      : field.scaleLowLabel === undefined && field.scaleHighLabel === undefined;
+      ? hasOwnOptionalString(field, "scaleLowLabel") && hasOwnOptionalString(field, "scaleHighLabel")
+      : !("scaleLowLabel" in field) && !("scaleHighLabel" in field);
 
   return (
-    typeof field.id === "string" &&
-    typeof field.label === "string" &&
-    typeof field.normalizedLabel === "string" &&
-    typeof field.type === "string" &&
-    allowedTypes.has(field.type) &&
-    typeof field.required === "boolean" &&
-    (field.textSubtype === undefined ||
-      field.textSubtype === "text" ||
-      field.textSubtype === "email" ||
-      field.textSubtype === "number" ||
-      field.textSubtype === "tel" ||
-      field.textSubtype === "url") &&
-    (field.options === undefined || (Array.isArray(field.options) && field.options.every((option) => typeof option === "string"))) &&
-    (field.otherOption === undefined || typeof field.otherOption === "string") &&
+    hasOwnString(field, "id") &&
+    hasOwnString(field, "label") &&
+    hasOwnString(field, "normalizedLabel") &&
+    hasOwnString(field, "type") &&
+    allowedTypes.has(field.type as string) &&
+    hasOwnBoolean(field, "required") &&
+    (!("textSubtype" in field) ||
+      (hasOwnKey(field, "textSubtype") &&
+        (field.textSubtype === undefined ||
+          field.textSubtype === "text" ||
+          field.textSubtype === "email" ||
+          field.textSubtype === "number" ||
+          field.textSubtype === "tel" ||
+          field.textSubtype === "url"))) &&
+    hasOwnOptionalStringArray(field, "options") &&
+    hasOwnOptionalString(field, "otherOption") &&
     gridMetadataValid &&
     scaleMetadataValid &&
-    (field.sectionKey === undefined || typeof field.sectionKey === "string") &&
-    (field.sectionTitle === undefined || typeof field.sectionTitle === "string") &&
-    (field.helpText === undefined || typeof field.helpText === "string")
+    hasOwnOptionalString(field, "sectionKey") &&
+    hasOwnOptionalString(field, "sectionTitle") &&
+    hasOwnOptionalString(field, "helpText")
   );
 }
 
 function isActiveFormContext(value: unknown): value is ActiveFormContext {
+  if (!isStringRecord(value)) {
+    return false;
+  }
+
   return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    typeof (value as ActiveFormContext).title === "string" &&
-    typeof (value as ActiveFormContext).url === "string" &&
-    typeof (value as ActiveFormContext).formKey === "string" &&
-    Array.isArray((value as ActiveFormContext).fields) &&
-    (value as ActiveFormContext).fields.every(isDetectedField)
+    hasOwnString(value, "title") &&
+    hasOwnString(value, "url") &&
+    hasOwnString(value, "formKey") &&
+    hasOwnKey(value, "fields") &&
+    Array.isArray(value.fields) &&
+    value.fields.every(isDetectedField)
   );
 }
 
 function isActiveFormLookup(value: unknown): value is ActiveFormLookup {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isStringRecord(value) || !hasOwnKey(value, "status")) {
     return false;
   }
 
-  const lookup = value as ActiveFormLookup;
+  const lookup = value;
   const validStatus =
     lookup.status === "ready" ||
     lookup.status === "unsupported_only" ||
     lookup.status === "invalid_url" ||
     lookup.status === "no_active_tab";
 
-  if (!validStatus || (lookup.pageUrl !== undefined && typeof lookup.pageUrl !== "string")) {
+  if (!validStatus || !hasOwnOptionalString(lookup, "pageUrl")) {
     return false;
   }
 
   if (lookup.status === "ready" || lookup.status === "unsupported_only") {
-    return isActiveFormContext(lookup.context);
+    return hasOwnKey(lookup, "context") && isActiveFormContext(lookup.context);
   }
 
-  return lookup.context === undefined;
+  return !("context" in lookup);
 }
 
 function renderProfileSelect(): void {

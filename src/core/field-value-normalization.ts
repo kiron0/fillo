@@ -2,31 +2,35 @@ import { normalizeText, optionEquals } from "./normalization";
 import type { ChoiceWithOtherValue, DetectedField, FieldValue, GridValue, ProfileValue } from "./types";
 
 export function isChoiceWithOtherValue(value: unknown): value is ChoiceWithOtherValue {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
   return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    "kind" in value &&
-    value.kind === "choice_with_other" &&
-    "selected" in value &&
-    (typeof value.selected === "string" || (Array.isArray(value.selected) && value.selected.every((item) => typeof item === "string"))) &&
-    "otherText" in value &&
-    typeof value.otherText === "string"
+    Object.hasOwn(record, "kind") &&
+    record.kind === "choice_with_other" &&
+    Object.hasOwn(record, "selected") &&
+    (typeof record.selected === "string" || (Array.isArray(record.selected) && record.selected.every((item) => typeof item === "string"))) &&
+    Object.hasOwn(record, "otherText") &&
+    typeof record.otherText === "string"
   );
 }
 
 export function isGridValue(value: unknown): value is GridValue {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
   return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    "kind" in value &&
-    value.kind === "grid" &&
-    "rows" in value &&
-    typeof value.rows === "object" &&
-    value.rows !== null &&
-    !Array.isArray(value.rows) &&
-    Object.values(value.rows).every(
+    Object.hasOwn(record, "kind") &&
+    record.kind === "grid" &&
+    Object.hasOwn(record, "rows") &&
+    typeof record.rows === "object" &&
+    record.rows !== null &&
+    !Array.isArray(record.rows) &&
+    Object.values(record.rows).every(
       (rowValue) =>
         typeof rowValue === "string" ||
         (Array.isArray(rowValue) && rowValue.every((item) => typeof item === "string")),

@@ -118,6 +118,201 @@ describe("background", () => {
     expect(executeScript).not.toHaveBeenCalled();
   });
 
+  it("returns a clear error for malformed background messages", async () => {
+    const query = vi.fn();
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query,
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener(null as unknown as BackgroundRequest, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Malformed background message",
+      });
+    });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("returns a clear error for malformed fill requests before scanning", async () => {
+    const query = vi.fn();
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query,
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "FILL_ACTIVE_FORM" } as unknown as BackgroundRequest, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Malformed background message",
+      });
+    });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("returns a clear error for malformed fill values before scanning", async () => {
+    const query = vi.fn();
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query,
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(
+      listener(
+        {
+          type: "FILL_ACTIVE_FORM",
+          payload: {
+            formKey: "form-1",
+            values: {
+              "field-1": { nested: true },
+            },
+          },
+        } as unknown as BackgroundRequest,
+        {},
+        sendResponse,
+      ),
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Malformed background message",
+      });
+    });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it("returns a clear error for malformed storage mutation requests", async () => {
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query: vi.fn(),
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(
+      listener(
+        {
+          type: "RUN_STORAGE_MUTATION",
+          payload: { kind: "save_profile" },
+        } as unknown as BackgroundRequest,
+        {},
+        sendResponse,
+      ),
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Malformed background message",
+      });
+    });
+  });
+
+  it("returns a clear error for malformed storage mutation record payloads", async () => {
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query: vi.fn(),
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(
+      listener(
+        {
+          type: "RUN_STORAGE_MUTATION",
+          payload: {
+            kind: "save_settings",
+            settings: {
+              defaultProfileId: null,
+              autoLoadMatchingProfile: "yes",
+              confirmBeforeFill: true,
+              showBackupSection: false,
+            },
+          },
+        } as unknown as BackgroundRequest,
+        {},
+        sendResponse,
+      ),
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Malformed background message",
+      });
+    });
+  });
+
+  it("returns a clear error for malformed import mutation payloads", async () => {
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query: vi.fn(),
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(
+      listener(
+        {
+          type: "RUN_STORAGE_MUTATION",
+          payload: {
+            kind: "import_app_data",
+            data: {
+              version: 1,
+              profiles: [
+                {
+                  id: "profile-1",
+                  name: "Broken",
+                  values: { fullName: { nested: true } },
+                  createdAt: 1,
+                  updatedAt: 1,
+                },
+              ],
+            },
+          },
+        } as unknown as BackgroundRequest,
+        {},
+        sendResponse,
+      ),
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Malformed background message",
+      });
+    });
+  });
+
   it("treats tab id 0 as a valid active tab", async () => {
     const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
       if (message.type === "PING") {
@@ -534,6 +729,46 @@ describe("background", () => {
               title: "Test form",
               url: "https://docs.google.com/forms/d/e/form-id/viewform",
               fields: [{ id: "field-1", label: "Name", type: "unsupported", required: false }],
+            },
+          });
+        },
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Content script scan response was malformed",
+      });
+    });
+  });
+
+  it("returns a clear error when scanned fields use inherited properties", async () => {
+    const inheritedField = Object.create(textField());
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage(_tabId: number, message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "PING") {
+            callback({ ok: true, data: { ready: true, version: null } });
+            return;
+          }
+
+          callback({
+            ok: true,
+            data: {
+              formKey: "form-id",
+              title: "Test form",
+              url: "https://docs.google.com/forms/d/e/form-id/viewform",
+              fields: [inheritedField],
             },
           });
         },

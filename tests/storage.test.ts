@@ -1,5 +1,6 @@
 import {
   clearAllData,
+  deletePreset,
   deleteProfile,
   exportAppData,
   getFormHistory,
@@ -310,6 +311,99 @@ describe("storage", () => {
     await expect(exportAppData({ profiles: "yes" } as unknown as { profiles: boolean })).rejects.toThrow(
       "Export selection must contain only boolean backup section flags.",
     );
+
+    await expect(exportAppData(Object.create({ profiles: false }))).rejects.toThrow(
+      "Export selection must contain only boolean backup section flags.",
+    );
+  });
+
+  it("rejects malformed direct storage mutation payloads", async () => {
+    await expect(
+      saveSettings({
+        defaultProfileId: null,
+        autoLoadMatchingProfile: "yes",
+        confirmBeforeFill: true,
+        showBackupSection: false,
+      } as unknown as Parameters<typeof saveSettings>[0]),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+
+    await expect(
+      saveProfile({
+        id: "profile-1",
+        name: "Broken",
+        values: { nested: { bad: true } },
+        createdAt: 1,
+        updatedAt: 1,
+      } as unknown as Parameters<typeof saveProfile>[0]),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+
+    await expect(deletePreset(42 as unknown as string)).rejects.toThrow("Storage mutation payload must be well-formed.");
+  });
+
+  it("rejects preset values with inherited choice or grid payload fields", async () => {
+    const inheritedChoice = Object.create({
+      kind: "choice_with_other",
+      selected: "Other",
+      otherText: "Biology",
+    });
+    const inheritedGrid = Object.create({
+      kind: "grid",
+      rows: {
+        monday: "Morning",
+      },
+    });
+
+    await expect(
+      savePreset({
+        id: "preset-1",
+        name: "Broken Preset",
+        formKey: "form-1",
+        fields: [],
+        values: {
+          department: inheritedChoice,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      } as unknown as Parameters<typeof savePreset>[0]),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+
+    await expect(
+      savePreset({
+        id: "preset-2",
+        name: "Broken Grid Preset",
+        formKey: "form-2",
+        fields: [],
+        values: {
+          availability: inheritedGrid,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      } as unknown as Parameters<typeof savePreset>[0]),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+  });
+
+  it("rejects storage records with inherited required fields", async () => {
+    const inheritedProfile = Object.create({
+      id: "profile-1",
+      name: "Inherited Profile",
+      values: { fullName: "Toufiq Hasan" },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const inheritedSettings = Object.create({
+      defaultProfileId: null,
+      autoLoadMatchingProfile: true,
+      confirmBeforeFill: true,
+      showBackupSection: false,
+    });
+
+    await expect(saveProfile(inheritedProfile as unknown as Parameters<typeof saveProfile>[0])).rejects.toThrow(
+      "Storage mutation payload must be well-formed.",
+    );
+
+    await expect(saveSettings(inheritedSettings as unknown as Parameters<typeof saveSettings>[0])).rejects.toThrow(
+      "Storage mutation payload must be well-formed.",
+    );
   });
 
   it("rejects incomplete import payloads without clearing existing data", async () => {
@@ -387,6 +481,21 @@ describe("storage", () => {
           showBackupSection: false,
         },
         selection: { profiles: "yes" } as unknown as { profiles: boolean },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+        selection: Object.create({ profiles: false }),
       }),
     ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
   });
@@ -790,6 +899,47 @@ describe("storage", () => {
                 gridRows: ["Morning", 2] as unknown as string[],
               },
             ],
+            values: {},
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+  });
+
+  it("rejects imported presets with inherited field grid metadata", async () => {
+    const inheritedGridField = Object.assign(
+      Object.create({
+        gridRows: ["Morning", "Evening"],
+        gridMode: "radio",
+      }),
+      {
+        id: "availability",
+        label: "Availability",
+        normalizedLabel: "availability",
+        type: "grid",
+        required: false,
+      },
+    );
+
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [
+          {
+            id: "preset-1",
+            name: "Inherited Grid Preset",
+            formKey: "form-1",
+            formTitle: "Inherited Grid",
+            fields: [inheritedGridField],
             values: {},
             createdAt: 1,
             updatedAt: 1,

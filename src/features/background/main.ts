@@ -9,8 +9,10 @@ import {
   savePresetDirect,
   saveProfileDirect,
   saveSettingsDirect,
+  isFieldValue,
+  validateImportedAppData,
 } from "../../core/storage-ops";
-import type { ActiveFormLookup, BackgroundRequest, ContentRequest, DetectedField, FillResult, MessageResponse, ScanResult } from "../../core/types";
+import type { ActiveFormLookup, BackgroundRequest, ContentRequest, DetectedField, FillRequest, FillResult, MessageResponse, ScanResult } from "../../core/types";
 
 const SCAN_RETRY_ATTEMPTS = 20;
 const SCAN_RETRY_DELAY_MS = 400;
@@ -55,6 +57,35 @@ function isLiveGoogleFormUrl(url: string | undefined): boolean {
   return /^\/forms\/(?:u\/\d+\/)?d\/(?:e\/)?[a-zA-Z0-9_-]+\/(?:viewform|formResponse)\/?$/.test(parsed.pathname);
 }
 
+function isStringRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasOwnKey(value: Record<string, unknown>, key: string): boolean {
+  return Object.hasOwn(value, key);
+}
+
+function hasOwnString(value: Record<string, unknown>, key: string): boolean {
+  return hasOwnKey(value, key) && typeof value[key] === "string";
+}
+
+function hasOwnBoolean(value: Record<string, unknown>, key: string): boolean {
+  return hasOwnKey(value, key) && typeof value[key] === "boolean";
+}
+
+function hasOwnOptionalString(value: Record<string, unknown>, key: string): boolean {
+  return !(key in value) || (hasOwnKey(value, key) && (value[key] === undefined || typeof value[key] === "string"));
+}
+
+function hasOwnOptionalStringArray(value: Record<string, unknown>, key: string): boolean {
+  const fieldValue = value[key];
+  return (
+    !(key in value) ||
+    (hasOwnKey(value, key) &&
+      (fieldValue === undefined || (Array.isArray(fieldValue) && fieldValue.every((item) => typeof item === "string"))))
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -67,74 +98,145 @@ function isCurrentContentScriptPing(
 }
 
 function isDetectedField(value: unknown): value is DetectedField {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isStringRecord(value)) {
     return false;
   }
 
-  const field = value as DetectedField;
+  const field = value;
   const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
+  const gridRows = field.gridRows;
+  const gridRowIds = field.gridRowIds;
   const gridMetadataValid =
     field.type === "grid"
-      ? Array.isArray(field.gridRows) &&
-        field.gridRows.every((row) => typeof row === "string") &&
-        (field.gridRowIds === undefined ||
-          (Array.isArray(field.gridRowIds) &&
-            field.gridRowIds.length === field.gridRows.length &&
-            field.gridRowIds.every((rowId) => typeof rowId === "string"))) &&
+      ? hasOwnKey(field, "gridRows") &&
+        Array.isArray(gridRows) &&
+        gridRows.every((row) => typeof row === "string") &&
+        (!("gridRowIds" in field) ||
+          (hasOwnKey(field, "gridRowIds") &&
+            (gridRowIds === undefined ||
+              (Array.isArray(gridRowIds) &&
+                gridRowIds.length === gridRows.length &&
+                gridRowIds.every((rowId) => typeof rowId === "string"))))) &&
+        hasOwnKey(field, "gridMode") &&
         (field.gridMode === "radio" || field.gridMode === "checkbox")
-      : field.gridRows === undefined && field.gridRowIds === undefined && field.gridMode === undefined;
+      : !("gridRows" in field) && !("gridRowIds" in field) && !("gridMode" in field);
   const scaleMetadataValid =
     field.type === "scale"
-      ? (field.scaleLowLabel === undefined || typeof field.scaleLowLabel === "string") &&
-        (field.scaleHighLabel === undefined || typeof field.scaleHighLabel === "string")
-      : field.scaleLowLabel === undefined && field.scaleHighLabel === undefined;
+      ? hasOwnOptionalString(field, "scaleLowLabel") && hasOwnOptionalString(field, "scaleHighLabel")
+      : !("scaleLowLabel" in field) && !("scaleHighLabel" in field);
 
   return (
-    typeof field.id === "string" &&
-    typeof field.label === "string" &&
-    typeof field.normalizedLabel === "string" &&
-    typeof field.type === "string" &&
-    allowedTypes.has(field.type) &&
-    typeof field.required === "boolean" &&
-    (field.textSubtype === undefined ||
-      field.textSubtype === "text" ||
-      field.textSubtype === "email" ||
-      field.textSubtype === "number" ||
-      field.textSubtype === "tel" ||
-      field.textSubtype === "url") &&
-    (field.options === undefined || (Array.isArray(field.options) && field.options.every((option) => typeof option === "string"))) &&
-    (field.otherOption === undefined || typeof field.otherOption === "string") &&
+    hasOwnString(field, "id") &&
+    hasOwnString(field, "label") &&
+    hasOwnString(field, "normalizedLabel") &&
+    hasOwnString(field, "type") &&
+    allowedTypes.has(field.type as string) &&
+    hasOwnBoolean(field, "required") &&
+    (!("textSubtype" in field) ||
+      (hasOwnKey(field, "textSubtype") &&
+        (field.textSubtype === undefined ||
+          field.textSubtype === "text" ||
+          field.textSubtype === "email" ||
+          field.textSubtype === "number" ||
+          field.textSubtype === "tel" ||
+          field.textSubtype === "url"))) &&
+    hasOwnOptionalStringArray(field, "options") &&
+    hasOwnOptionalString(field, "otherOption") &&
     gridMetadataValid &&
     scaleMetadataValid &&
-    (field.sectionKey === undefined || typeof field.sectionKey === "string") &&
-    (field.sectionTitle === undefined || typeof field.sectionTitle === "string") &&
-    (field.helpText === undefined || typeof field.helpText === "string")
+    hasOwnOptionalString(field, "sectionKey") &&
+    hasOwnOptionalString(field, "sectionTitle") &&
+    hasOwnOptionalString(field, "helpText")
   );
 }
 
 function isScanResult(value: unknown): value is ScanResult {
+  if (!isStringRecord(value)) {
+    return false;
+  }
+
   return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    typeof (value as ScanResult).title === "string" &&
-    typeof (value as ScanResult).url === "string" &&
-    typeof (value as ScanResult).formKey === "string" &&
-    Array.isArray((value as ScanResult).fields) &&
-    (value as ScanResult).fields.every(isDetectedField)
+    hasOwnString(value, "title") &&
+    hasOwnString(value, "url") &&
+    hasOwnString(value, "formKey") &&
+    hasOwnKey(value, "fields") &&
+    Array.isArray(value.fields) &&
+    value.fields.every(isDetectedField)
   );
 }
 
 function isFillResult(value: unknown): value is FillResult {
+  if (!isStringRecord(value)) {
+    return false;
+  }
+
   return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Array.isArray((value as FillResult).filledFieldIds) &&
-    (value as FillResult).filledFieldIds.every((fieldId) => typeof fieldId === "string") &&
-    Array.isArray((value as FillResult).skippedFieldIds) &&
-    (value as FillResult).skippedFieldIds.every((fieldId) => typeof fieldId === "string")
+    hasOwnKey(value, "filledFieldIds") &&
+    Array.isArray(value.filledFieldIds) &&
+    value.filledFieldIds.every((fieldId) => typeof fieldId === "string") &&
+    hasOwnKey(value, "skippedFieldIds") &&
+    Array.isArray(value.skippedFieldIds) &&
+    value.skippedFieldIds.every((fieldId) => typeof fieldId === "string")
   );
+}
+
+function isFillRequest(value: unknown): value is FillRequest {
+  if (
+    !isStringRecord(value) ||
+    !hasOwnString(value, "formKey") ||
+    !hasOwnKey(value, "values") ||
+    !isStringRecord(value.values) ||
+    !Object.values(value.values).every(isFieldValue)
+  ) {
+    return false;
+  }
+
+  return !("fields" in value) || (hasOwnKey(value, "fields") && Array.isArray(value.fields) && value.fields.every(isDetectedField));
+}
+
+function isStorageMutationPayload(value: unknown): value is Extract<BackgroundRequest, { type: "RUN_STORAGE_MUTATION" }>["payload"] {
+  if (!isStringRecord(value) || !hasOwnString(value, "kind")) {
+    return false;
+  }
+
+  switch (value.kind) {
+    case "save_profile":
+      return hasOwnKey(value, "profile") && validateImportedAppData({ version: 1, profiles: [value.profile] });
+    case "delete_profile":
+      return hasOwnString(value, "profileId");
+    case "save_preset":
+      return hasOwnKey(value, "preset") && validateImportedAppData({ version: 1, presets: [value.preset] });
+    case "delete_preset":
+      return hasOwnString(value, "presetId");
+    case "save_history_entry":
+      return hasOwnKey(value, "entry") && validateImportedAppData({ version: 1, history: [value.entry] });
+    case "clear_history":
+      return true;
+    case "save_settings":
+      return hasOwnKey(value, "settings") && validateImportedAppData({ version: 1, settings: value.settings });
+    case "clear_all_data":
+      return true;
+    case "import_app_data":
+      return hasOwnKey(value, "data") && validateImportedAppData(value.data);
+    default:
+      return false;
+  }
+}
+
+function isBackgroundRequest(value: unknown): value is BackgroundRequest {
+  if (!isStringRecord(value) || !hasOwnString(value, "type")) {
+    return false;
+  }
+
+  if (value.type === "GET_ACTIVE_FORM_CONTEXT") {
+    return true;
+  }
+
+  if (value.type === "FILL_ACTIVE_FORM") {
+    return hasOwnKey(value, "payload") && isFillRequest(value.payload);
+  }
+
+  return value.type === "RUN_STORAGE_MUTATION" && hasOwnKey(value, "payload") && isStorageMutationPayload(value.payload);
 }
 
 async function ensureContentScript(tabId: number): Promise<void> {
@@ -211,6 +313,10 @@ function enqueueStorageMutation<T>(action: () => Promise<T>): Promise<T> {
 chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendResponse) => {
   (async () => {
     try {
+      if (!isBackgroundRequest(message)) {
+        throw new Error("Malformed background message");
+      }
+
       switch (message.type) {
         case "GET_ACTIVE_FORM_CONTEXT": {
           const tab = await getActiveTab();

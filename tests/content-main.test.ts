@@ -116,6 +116,32 @@ describe("content main", () => {
     });
   });
 
+  it("rejects fill messages with inherited value-map entries before filling", async () => {
+    const listener = await loadContentMainWithChrome();
+    const sendResponse = vi.fn();
+
+    expect(
+      listener(
+        {
+          type: "FILL_FORM",
+          payload: {
+            formKey: "form-1",
+            values: Object.create({
+              "field-1": "Toufiq Hasan",
+            }),
+          },
+        } as ContentRequest,
+        {},
+        sendResponse,
+      ),
+    ).toBe(false);
+
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: false,
+      error: "Malformed content-script message",
+    });
+  });
+
   it("rejects fill messages with malformed values before filling", async () => {
     const listener = await loadContentMainWithChrome();
     const sendResponse = vi.fn();

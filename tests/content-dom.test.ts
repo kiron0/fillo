@@ -2097,6 +2097,33 @@ describe("content dom", () => {
     expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("true");
   });
 
+  it("skips sparse grid row arrays without changing existing selections", () => {
+    document.documentElement.innerHTML = checkboxGridHtml;
+    setInteractiveRoleClicks(document);
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSsparsegrid/viewform");
+
+    const gridRows = Array.from(document.querySelectorAll<HTMLElement>('[role="grid"] [role="row"]')).slice(1);
+    gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.click();
+    expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("true");
+
+    const fillResult = fillFormDocument(document, {
+      formKey: scan.formKey,
+      fields: scan.fields,
+      values: {
+        [scan.fields[0]!.id]: {
+          kind: "grid",
+          rows: {
+            "Row 1": new Array(1) as string[],
+          },
+        },
+      },
+    });
+
+    expect(fillResult.filledFieldIds).toEqual([]);
+    expect(fillResult.skippedFieldIds).toEqual([scan.fields[0]!.id]);
+    expect(gridRows[0]!.querySelectorAll<HTMLElement>('[role="checkbox"]')[0]!.getAttribute("aria-checked")).toBe("true");
+  });
+
   it("detects flattened radio grids from accessibility labels", () => {
     document.documentElement.innerHTML = flattenedRadioGridHtml;
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSflattened/viewform");

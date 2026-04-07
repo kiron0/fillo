@@ -5232,6 +5232,83 @@ describe("popup", () => {
     });
   });
 
+  it("shows a clear startup error when active form option-backed fields have sparse options", async () => {
+    const sparseOptions = new Array(1) as unknown as string[];
+
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(
+              Object.fromEntries(
+                keys.map((key) => [
+                  key,
+                  key === "settings"
+                    ? {
+                        defaultProfileId: null,
+                        autoLoadMatchingProfile: false,
+                        confirmBeforeFill: false,
+                        showBackupSection: false,
+                      }
+                    : [],
+                ]),
+              ),
+            );
+          },
+          set(_value: Record<string, unknown>, callback: () => void) {
+            callback();
+          },
+          remove(_keys: string[], callback: () => void) {
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({
+              ok: true,
+              data: {
+                status: "ready",
+                context: {
+                  title: "Registration",
+                  url: "https://docs.google.com/forms/d/e/form-id/viewform",
+                  formKey: "form-id",
+                  fields: [
+                    {
+                      id: "department",
+                      label: "Department",
+                      normalizedLabel: "department",
+                      type: "dropdown",
+                      required: false,
+                      options: sparseOptions,
+                    },
+                  ],
+                },
+              },
+            });
+            return;
+          }
+
+          callback({ ok: false, error: "Unknown message" });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLHeadingElement>("#error-title")!.textContent).toBe("Unable to read this form");
+      expect(document.querySelector<HTMLParagraphElement>("#error-message")!.textContent).toBe(
+        "Background active form response was malformed",
+      );
+    });
+  });
+
   it("shows a clear startup error when active form non-choice fields have other-option metadata", async () => {
     vi.stubGlobal("chrome", {
       storage: {

@@ -669,6 +669,30 @@ function buildChoiceOptions(nodes: HTMLElement[], container: HTMLElement, role: 
   return { options, otherOption };
 }
 
+function hasOnlyOwnEnumerableProperties(value: Record<string, unknown>): boolean {
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index) || typeof value[index] !== "string") {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function isGridValue(value: FieldValue): value is GridValue {
   return (
     typeof value === "object" &&
@@ -680,10 +704,11 @@ function isGridValue(value: FieldValue): value is GridValue {
     typeof value.rows === "object" &&
     value.rows !== null &&
     !Array.isArray(value.rows) &&
+    hasOnlyOwnEnumerableProperties(value.rows as Record<string, unknown>) &&
     Object.values(value.rows).every(
       (rowValue) =>
         typeof rowValue === "string" ||
-        (Array.isArray(rowValue) && rowValue.every((item) => typeof item === "string")),
+        isStringArray(rowValue),
     )
   );
 }
@@ -862,7 +887,7 @@ function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValu
     Object.hasOwn(value, "kind") &&
     value.kind === "choice_with_other" &&
     Object.hasOwn(value, "selected") &&
-    (typeof value.selected === "string" || (Array.isArray(value.selected) && value.selected.every((item) => typeof item === "string"))) &&
+    (typeof value.selected === "string" || isStringArray(value.selected)) &&
     Object.hasOwn(value, "otherText") &&
     typeof value.otherText === "string"
   );

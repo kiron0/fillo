@@ -11,6 +11,20 @@ function hasOnlyOwnEnumerableProperties(value: Record<string, unknown>): boolean
   return true;
 }
 
+function isStringArray(value: unknown): value is string[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index) || typeof value[index] !== "string") {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function isChoiceWithOtherValue(value: unknown): value is ChoiceWithOtherValue {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
@@ -21,7 +35,7 @@ export function isChoiceWithOtherValue(value: unknown): value is ChoiceWithOther
     Object.hasOwn(record, "kind") &&
     record.kind === "choice_with_other" &&
     Object.hasOwn(record, "selected") &&
-    (typeof record.selected === "string" || (Array.isArray(record.selected) && record.selected.every((item) => typeof item === "string"))) &&
+    (typeof record.selected === "string" || isStringArray(record.selected)) &&
     Object.hasOwn(record, "otherText") &&
     typeof record.otherText === "string"
   );
@@ -44,7 +58,7 @@ export function isGridValue(value: unknown): value is GridValue {
     Object.values(record.rows).every(
       (rowValue) =>
         typeof rowValue === "string" ||
-        (Array.isArray(rowValue) && rowValue.every((item) => typeof item === "string")),
+        isStringArray(rowValue),
     )
   );
 }

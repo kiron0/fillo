@@ -19,6 +19,16 @@ function hasOwnKey(value: Record<string, unknown>, key: string): boolean {
   return Object.hasOwn(value, key);
 }
 
+function hasOnlyOwnEnumerableProperties(value: Record<string, unknown>): boolean {
+  for (const key in value) {
+    if (!hasOwnKey(value, key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function hasOwnString(value: Record<string, unknown>, key: string): boolean {
   return hasOwnKey(value, key) && typeof value[key] === "string";
 }
@@ -29,6 +39,7 @@ function isFillRequest(value: unknown): value is FillRequest {
     hasOwnString(value, "formKey") &&
     hasOwnKey(value, "values") &&
     isStringRecord(value.values) &&
+    hasOnlyOwnEnumerableProperties(value.values) &&
     Object.values(value.values).every(isFieldValue)
   );
 }

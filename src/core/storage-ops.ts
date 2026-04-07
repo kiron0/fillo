@@ -39,6 +39,24 @@ function hasOnlyOwnEnumerableProperties(value: Record<string, unknown>): boolean
   return true;
 }
 
+function isDenseArrayOf(value: unknown, isItem: (item: unknown) => boolean): value is unknown[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index) || !isItem(value[index])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return isDenseArrayOf(value, (item) => typeof item === "string");
+}
+
 function hasOwnString(value: Record<string, unknown>, key: string): boolean {
   return hasOwnKey(value, key) && typeof value[key] === "string";
 }
@@ -55,8 +73,7 @@ function optionalOwnStringArray(value: Record<string, unknown>, key: string): bo
   const fieldValue = value[key];
   return (
     !(key in value) ||
-    (hasOwnKey(value, key) &&
-      (fieldValue === undefined || (Array.isArray(fieldValue) && fieldValue.every((item) => typeof item === "string"))))
+    (hasOwnKey(value, key) && (fieldValue === undefined || isStringArray(fieldValue)))
   );
 }
 
@@ -73,7 +90,7 @@ function isProfileValue(value: unknown): boolean {
     return Number.isFinite(value);
   }
 
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
+  return isStringArray(value);
 }
 
 function isPrimitiveFieldValue(value: unknown): boolean {
@@ -97,8 +114,7 @@ function isDetectedField(value: unknown): boolean {
   const gridRowIds = value.gridRowIds;
   const optionsValid = optionBackedTypes.has(type as string)
     ? hasOwnKey(value, "options") &&
-      Array.isArray(value.options) &&
-      value.options.every((option) => typeof option === "string")
+      isStringArray(value.options)
     : optionalOwnStringArray(value, "options");
   const textSubtypeValid =
     type === "text"
@@ -114,19 +130,17 @@ function isDetectedField(value: unknown): boolean {
   const otherOptionValid =
     otherOptionTypes.has(type as string)
       ? optionalOwnString(value, "otherOption") &&
-        (typeof value.otherOption !== "string" || (Array.isArray(value.options) && value.options.includes(value.otherOption)))
+        (typeof value.otherOption !== "string" || (isStringArray(value.options) && value.options.includes(value.otherOption)))
       : !("otherOption" in value) || (hasOwnKey(value, "otherOption") && value.otherOption === undefined);
   const gridMetadataValid =
     type === "grid"
       ? hasOwnKey(value, "gridRows") &&
-        Array.isArray(gridRows) &&
-        gridRows.every((row) => typeof row === "string") &&
+        isStringArray(gridRows) &&
         (!("gridRowIds" in value) ||
           (hasOwnKey(value, "gridRowIds") &&
             (gridRowIds === undefined ||
-              (Array.isArray(gridRowIds) &&
-                gridRowIds.length === gridRows.length &&
-                gridRowIds.every((rowId) => typeof rowId === "string"))))) &&
+              (isStringArray(gridRowIds) &&
+                gridRowIds.length === gridRows.length)))) &&
         hasOwnKey(value, "gridMode") &&
         (value.gridMode === "radio" || value.gridMode === "checkbox")
       : !("gridRows" in value) && !("gridRowIds" in value) && !("gridMode" in value);
@@ -158,7 +172,7 @@ function isDetectedField(value: unknown): boolean {
 export function isFieldValue(value: unknown): boolean {
   return (
     isPrimitiveFieldValue(value) ||
-    (Array.isArray(value) && value.every((item) => typeof item === "string")) ||
+    isStringArray(value) ||
     isChoiceWithOtherValue(value) ||
     (isStringRecord(value) &&
       Object.hasOwn(value, "kind") &&
@@ -168,7 +182,7 @@ export function isFieldValue(value: unknown): boolean {
       hasOnlyOwnEnumerableProperties(value.rows) &&
       Object.values(value.rows).every(
         (rowValue) =>
-          typeof rowValue === "string" || (Array.isArray(rowValue) && rowValue.every((item) => typeof item === "string")),
+          typeof rowValue === "string" || isStringArray(rowValue),
       ))
   );
 }
@@ -203,7 +217,7 @@ function isProfile(value: unknown): value is Profile {
         isStringRecord(value.aliases) &&
         hasOnlyOwnEnumerableProperties(value.aliases) &&
         Object.values(value.aliases).every(
-          (aliasList) => Array.isArray(aliasList) && aliasList.every((alias) => typeof alias === "string"),
+          (aliasList) => isStringArray(aliasList),
         )))
   );
 }
@@ -233,8 +247,7 @@ function isPresetSectionSnapshot(value: unknown): boolean {
     hasOwnString(value, "title") &&
     hasOwnFiniteNumber(value, "updatedAt") &&
     hasOwnKey(value, "fieldIds") &&
-    Array.isArray(value.fieldIds) &&
-    value.fieldIds.every((item) => typeof item === "string")
+    isStringArray(value.fieldIds)
   );
 }
 
@@ -250,8 +263,7 @@ function isFormPreset(value: unknown): value is FormPreset {
     hasOwnFiniteNumber(value, "createdAt") &&
     hasOwnFiniteNumber(value, "updatedAt") &&
     hasOwnKey(value, "fields") &&
-    Array.isArray(value.fields) &&
-    value.fields.every(isDetectedField) &&
+    isDenseArrayOf(value.fields, isDetectedField) &&
     Object.values(value.values).every(isFieldValue) &&
     optionalOwnString(value, "formTitle") &&
     optionalOwnString(value, "formUrl") &&
@@ -261,10 +273,10 @@ function isFormPreset(value: unknown): value is FormPreset {
         hasOnlyOwnEnumerableProperties(value.mappings) &&
         Object.values(value.mappings).every((item) => typeof item === "string"))) &&
     (!("unmappedFieldIds" in value) ||
-      (hasOwnKey(value, "unmappedFieldIds") && Array.isArray(value.unmappedFieldIds) && value.unmappedFieldIds.every((item) => typeof item === "string"))) &&
+      (hasOwnKey(value, "unmappedFieldIds") && isStringArray(value.unmappedFieldIds))) &&
     (!("excludedFieldIds" in value) ||
-      (hasOwnKey(value, "excludedFieldIds") && Array.isArray(value.excludedFieldIds) && value.excludedFieldIds.every((item) => typeof item === "string"))) &&
-    (!("sections" in value) || (hasOwnKey(value, "sections") && Array.isArray(value.sections) && value.sections.every(isPresetSectionSnapshot))) &&
+      (hasOwnKey(value, "excludedFieldIds") && isStringArray(value.excludedFieldIds))) &&
+    (!("sections" in value) || (hasOwnKey(value, "sections") && isDenseArrayOf(value.sections, isPresetSectionSnapshot))) &&
     (!("mappingSchemaVersion" in value) || (hasOwnKey(value, "mappingSchemaVersion") && value.mappingSchemaVersion === 2))
   );
 }
@@ -315,10 +327,10 @@ export function validateImportedAppData(payload: unknown): payload is ImportedAp
     isStringRecord(payload) &&
     hasOwnKey(payload, "version") &&
     payload.version === 1 &&
-    (!("profiles" in payload) || (hasOwnKey(payload, "profiles") && Array.isArray(payload.profiles) && payload.profiles.every(isProfile))) &&
-    (!("presets" in payload) || (hasOwnKey(payload, "presets") && Array.isArray(payload.presets) && payload.presets.every(isFormPreset))) &&
+    (!("profiles" in payload) || (hasOwnKey(payload, "profiles") && isDenseArrayOf(payload.profiles, isProfile))) &&
+    (!("presets" in payload) || (hasOwnKey(payload, "presets") && isDenseArrayOf(payload.presets, isFormPreset))) &&
     (!("settings" in payload) || (hasOwnKey(payload, "settings") && isAppSettings(payload.settings))) &&
-    (!("history" in payload) || (hasOwnKey(payload, "history") && Array.isArray(payload.history) && payload.history.every(isFormHistoryEntry))) &&
+    (!("history" in payload) || (hasOwnKey(payload, "history") && isDenseArrayOf(payload.history, isFormHistoryEntry))) &&
     (!("selection" in payload) ||
       (hasOwnKey(payload, "selection") &&
         isPartialExportSelection(payload.selection) &&

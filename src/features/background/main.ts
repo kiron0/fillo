@@ -65,12 +65,50 @@ function hasOwnKey(value: Record<string, unknown>, key: string): boolean {
   return Object.hasOwn(value, key);
 }
 
+function hasOnlyOwnEnumerableProperties(value: Record<string, unknown>): boolean {
+  for (const key in value) {
+    if (!hasOwnKey(value, key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function isDenseArrayOf(value: unknown, isItem: (item: unknown) => boolean): value is unknown[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index) || !isItem(value[index])) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function hasOwnString(value: Record<string, unknown>, key: string): boolean {
   return hasOwnKey(value, key) && typeof value[key] === "string";
 }
 
 function hasOwnBoolean(value: Record<string, unknown>, key: string): boolean {
   return hasOwnKey(value, key) && typeof value[key] === "boolean";
+}
+
+function isStringArray(value: unknown): value is string[] {
+  if (!Array.isArray(value)) {
+    return false;
+  }
+
+  for (let index = 0; index < value.length; index += 1) {
+    if (!Object.hasOwn(value, index) || typeof value[index] !== "string") {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function hasOwnOptionalString(value: Record<string, unknown>, key: string): boolean {
@@ -81,8 +119,7 @@ function hasOwnOptionalStringArray(value: Record<string, unknown>, key: string):
   const fieldValue = value[key];
   return (
     !(key in value) ||
-    (hasOwnKey(value, key) &&
-      (fieldValue === undefined || (Array.isArray(fieldValue) && fieldValue.every((item) => typeof item === "string"))))
+    (hasOwnKey(value, key) && (fieldValue === undefined || isStringArray(fieldValue)))
   );
 }
 
@@ -110,8 +147,7 @@ function isDetectedField(value: unknown): value is DetectedField {
   const gridRowIds = field.gridRowIds;
   const optionsValid = optionBackedTypes.has(field.type as string)
     ? hasOwnKey(field, "options") &&
-      Array.isArray(field.options) &&
-      field.options.every((option) => typeof option === "string")
+      isStringArray(field.options)
     : hasOwnOptionalStringArray(field, "options");
   const textSubtypeValid =
     field.type === "text"
@@ -127,19 +163,17 @@ function isDetectedField(value: unknown): value is DetectedField {
   const otherOptionValid =
     otherOptionTypes.has(field.type as string)
       ? hasOwnOptionalString(field, "otherOption") &&
-        (typeof field.otherOption !== "string" || (Array.isArray(field.options) && field.options.includes(field.otherOption)))
+        (typeof field.otherOption !== "string" || (isStringArray(field.options) && field.options.includes(field.otherOption)))
       : !("otherOption" in field) || (hasOwnKey(field, "otherOption") && field.otherOption === undefined);
   const gridMetadataValid =
     field.type === "grid"
       ? hasOwnKey(field, "gridRows") &&
-        Array.isArray(gridRows) &&
-        gridRows.every((row) => typeof row === "string") &&
+        isStringArray(gridRows) &&
         (!("gridRowIds" in field) ||
           (hasOwnKey(field, "gridRowIds") &&
             (gridRowIds === undefined ||
-              (Array.isArray(gridRowIds) &&
-                gridRowIds.length === gridRows.length &&
-                gridRowIds.every((rowId) => typeof rowId === "string"))))) &&
+              (isStringArray(gridRowIds) &&
+                gridRowIds.length === gridRows.length)))) &&
         hasOwnKey(field, "gridMode") &&
         (field.gridMode === "radio" || field.gridMode === "checkbox")
       : !("gridRows" in field) && !("gridRowIds" in field) && !("gridMode" in field);
@@ -176,8 +210,7 @@ function isScanResult(value: unknown): value is ScanResult {
     hasOwnString(value, "url") &&
     hasOwnString(value, "formKey") &&
     hasOwnKey(value, "fields") &&
-    Array.isArray(value.fields) &&
-    value.fields.every(isDetectedField)
+    isDenseArrayOf(value.fields, isDetectedField)
   );
 }
 
@@ -188,11 +221,9 @@ function isFillResult(value: unknown): value is FillResult {
 
   return (
     hasOwnKey(value, "filledFieldIds") &&
-    Array.isArray(value.filledFieldIds) &&
-    value.filledFieldIds.every((fieldId) => typeof fieldId === "string") &&
+    isStringArray(value.filledFieldIds) &&
     hasOwnKey(value, "skippedFieldIds") &&
-    Array.isArray(value.skippedFieldIds) &&
-    value.skippedFieldIds.every((fieldId) => typeof fieldId === "string")
+    isStringArray(value.skippedFieldIds)
   );
 }
 
@@ -202,12 +233,13 @@ function isFillRequest(value: unknown): value is FillRequest {
     !hasOwnString(value, "formKey") ||
     !hasOwnKey(value, "values") ||
     !isStringRecord(value.values) ||
+    !hasOnlyOwnEnumerableProperties(value.values) ||
     !Object.values(value.values).every(isFieldValue)
   ) {
     return false;
   }
 
-  return !("fields" in value) || (hasOwnKey(value, "fields") && Array.isArray(value.fields) && value.fields.every(isDetectedField));
+  return !("fields" in value) || (hasOwnKey(value, "fields") && isDenseArrayOf(value.fields, isDetectedField));
 }
 
 function isStorageMutationPayload(value: unknown): value is Extract<BackgroundRequest, { type: "RUN_STORAGE_MUTATION" }>["payload"] {

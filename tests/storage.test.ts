@@ -462,6 +462,45 @@ describe("storage", () => {
     ).rejects.toThrow("Storage mutation payload must be well-formed.");
   });
 
+  it("rejects storage records with sparse arrays", async () => {
+    const sparseOptions = new Array(1) as unknown as string[];
+    const sparseFieldIds = new Array(1) as unknown as string[];
+
+    await expect(
+      savePreset({
+        id: "preset-1",
+        name: "Sparse Options Preset",
+        formKey: "form-1",
+        fields: [
+          {
+            id: "department",
+            label: "Department",
+            normalizedLabel: "department",
+            type: "dropdown",
+            required: false,
+            options: sparseOptions,
+          },
+        ],
+        values: {},
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+
+    await expect(
+      savePreset({
+        id: "preset-2",
+        name: "Sparse Section Preset",
+        formKey: "form-2",
+        fields: [],
+        values: {},
+        sections: [{ id: "section-1", title: "Section", fieldIds: sparseFieldIds, updatedAt: 1 }],
+        createdAt: 1,
+        updatedAt: 1,
+      }),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+  });
+
   it("rejects incomplete import payloads without clearing existing data", async () => {
     await saveProfile({
       id: "profile-1",

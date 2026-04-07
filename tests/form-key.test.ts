@@ -7,6 +7,14 @@ describe("form-key", () => {
     );
   });
 
+  it("does not extract google form ids from non-google hosts", () => {
+    expect(extractGoogleFormId("https://example.com/forms/d/e/1FAIpQLSd123abcXYZ/viewform")).toBeNull();
+  });
+
+  it("does not extract google form ids from malformed urls", () => {
+    expect(extractGoogleFormId("/forms/d/e/1FAIpQLSd123abcXYZ/viewform")).toBeNull();
+  });
+
   it("creates a deterministic fallback key when no form id exists", () => {
     const first = createFallbackFormKey("https://example.com/form", "Registration", ["Full Name", "Email"]);
     const second = createFallbackFormKey("https://example.com/form", "Registration", ["Full Name", "Email"]);

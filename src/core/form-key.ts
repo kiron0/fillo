@@ -1,7 +1,18 @@
 import { normalizeText } from "./normalization";
 
 export function extractGoogleFormId(url: string): string | null {
-  const match = url.match(/\/forms\/d\/e\/([a-zA-Z0-9_-]+)/);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+
+  if (parsed.hostname !== "docs.google.com") {
+    return null;
+  }
+
+  const match = parsed.pathname.match(/^\/forms\/d\/e\/([a-zA-Z0-9_-]+)(?:\/|$)/);
   return match?.[1] ?? null;
 }
 

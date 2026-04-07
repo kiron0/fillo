@@ -2735,7 +2735,7 @@ describe("popup", () => {
         ...mock.chrome.runtime,
         sendMessage(message: { type: string }, callback: (response: unknown) => void) {
           if (message.type === "FILL_ACTIVE_FORM") {
-            callback({ ok: true, data: { filledFieldIds: ["full_name"] } });
+            callback({ ok: true, data: { filledFieldIds: ["full_name"], skippedFieldIds: [42] } });
             return;
           }
 

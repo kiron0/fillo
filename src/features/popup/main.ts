@@ -213,7 +213,9 @@ function isFillResult(value: unknown): value is FillResult {
     Boolean(value) &&
     typeof value === "object" &&
     Array.isArray((value as FillResult).filledFieldIds) &&
-    Array.isArray((value as FillResult).skippedFieldIds)
+    (value as FillResult).filledFieldIds.every((fieldId) => typeof fieldId === "string") &&
+    Array.isArray((value as FillResult).skippedFieldIds) &&
+    (value as FillResult).skippedFieldIds.every((fieldId) => typeof fieldId === "string")
   );
 }
 

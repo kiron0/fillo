@@ -76,6 +76,7 @@ describe("background", () => {
             data: {
               formKey: "form-id",
               title: "Test form",
+              url: "https://docs.google.com/forms/d/e/form-id/viewform",
               fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
             },
           });
@@ -98,6 +99,7 @@ describe("background", () => {
           context: {
             formKey: "form-id",
             title: "Test form",
+            url: "https://docs.google.com/forms/d/e/form-id/viewform",
             fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
           },
         },
@@ -118,6 +120,7 @@ describe("background", () => {
         data: {
           formKey: "form-id",
           title: "Test form",
+          url: "https://docs.google.com/forms/d/e/form-id/viewform",
           fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
         },
       });
@@ -191,6 +194,7 @@ describe("background", () => {
         data: {
           formKey: "form-id",
           title: "Test form",
+          url: "https://docs.google.com/forms/d/e/form-id/formResponse",
           fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
         },
       });
@@ -273,6 +277,7 @@ describe("background", () => {
         data: {
           formKey: "form-id",
           title: "Test form",
+          url: "https://docs.google.com/forms/d/e/form-id/viewform",
           fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
         },
       });
@@ -361,6 +366,37 @@ describe("background", () => {
       expect(sendResponse).toHaveBeenCalledWith({
         ok: false,
         error: "Content script response was missing data",
+      });
+    });
+  });
+
+  it("returns a clear error when a scan response is malformed", async () => {
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage(_tabId: number, message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "PING") {
+            callback({ ok: true, data: { ready: true, version: null } });
+            return;
+          }
+
+          callback({ ok: true, data: { title: "Test form", formKey: "form-id" } });
+        },
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Content script scan response was malformed",
       });
     });
   });

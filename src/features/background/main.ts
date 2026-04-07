@@ -66,6 +66,18 @@ function isCurrentContentScriptPing(
   return Boolean(ping?.ready && (!expectedVersion || ping.version === expectedVersion));
 }
 
+function isScanResult(value: unknown): value is ScanResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as ScanResult).title === "string" &&
+    typeof (value as ScanResult).url === "string" &&
+    typeof (value as ScanResult).formKey === "string" &&
+    Array.isArray((value as ScanResult).fields)
+  );
+}
+
 async function ensureContentScript(tabId: number): Promise<void> {
   const expectedVersion = runtimeManifestVersion();
 
@@ -104,6 +116,10 @@ async function scanActiveFormWithRetry(tabId: number): Promise<ScanResult> {
 
   for (let attempt = 0; attempt < SCAN_RETRY_ATTEMPTS; attempt += 1) {
     const scan = await sendToTab<ScanResult>(tabId, { type: "SCAN_FORM" });
+    if (!isScanResult(scan)) {
+      throw new Error("Content script scan response was malformed");
+    }
+
     lastScan = scan;
 
     if (scan.fields.length > 0) {

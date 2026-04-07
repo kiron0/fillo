@@ -7,12 +7,19 @@ export function hasChromeRuntime(): boolean {
 }
 
 function getLastErrorMessage(): string | null {
-  return chrome.runtime?.lastError?.message ?? null;
+  const lastError = chrome.runtime?.lastError;
+  if (!lastError) {
+    return null;
+  }
+
+  return typeof lastError.message === "string"
+    ? lastError.message
+    : "Chrome runtime error";
 }
 
 export function storageGet<T extends Record<string, unknown>>(keys: string[]): Promise<T> {
   return new Promise((resolve, reject) => {
-    if (typeof chrome === "undefined" || !chrome.storage?.local) {
+    if (typeof chrome === "undefined" || typeof chrome.storage?.local?.get !== "function") {
       reject(new Error("chrome.storage.local is not available"));
       return;
     }
@@ -24,7 +31,7 @@ export function storageGet<T extends Record<string, unknown>>(keys: string[]): P
           reject(new Error(error));
           return;
         }
-        resolve(result as T);
+        resolve((result && typeof result === "object" ? result : {}) as T);
       });
     } catch (error) {
       reject(error instanceof Error ? error : new Error("chrome.storage.local.get failed"));
@@ -34,7 +41,7 @@ export function storageGet<T extends Record<string, unknown>>(keys: string[]): P
 
 export function storageSet(value: Record<string, unknown>): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (typeof chrome === "undefined" || !chrome.storage?.local) {
+    if (typeof chrome === "undefined" || typeof chrome.storage?.local?.set !== "function") {
       reject(new Error("chrome.storage.local is not available"));
       return;
     }
@@ -56,7 +63,7 @@ export function storageSet(value: Record<string, unknown>): Promise<void> {
 
 export function storageRemove(keys: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (typeof chrome === "undefined" || !chrome.storage?.local) {
+    if (typeof chrome === "undefined" || typeof chrome.storage?.local?.remove !== "function") {
       reject(new Error("chrome.storage.local is not available"));
       return;
     }
@@ -135,7 +142,7 @@ export function runtimeManifestVersion(): string | null {
 
 export function tabsQuery(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs.Tab[]> {
   return new Promise((resolve, reject) => {
-    if (typeof chrome === "undefined" || !chrome.tabs?.query) {
+    if (typeof chrome === "undefined" || typeof chrome.tabs?.query !== "function") {
       reject(new Error("chrome.tabs.query is not available"));
       return;
     }
@@ -147,7 +154,7 @@ export function tabsQuery(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs
           reject(new Error(error));
           return;
         }
-        resolve(tabs);
+        resolve(Array.isArray(tabs) ? tabs : []);
       });
     } catch (error) {
       reject(error instanceof Error ? error : new Error("chrome.tabs.query failed"));
@@ -157,7 +164,7 @@ export function tabsQuery(queryInfo: chrome.tabs.QueryInfo): Promise<chrome.tabs
 
 export function tabsSendMessage<T>(tabId: number, message: unknown): Promise<T> {
   return new Promise((resolve, reject) => {
-    if (typeof chrome === "undefined" || !chrome.tabs?.sendMessage) {
+    if (typeof chrome === "undefined" || typeof chrome.tabs?.sendMessage !== "function") {
       reject(new Error("chrome.tabs.sendMessage is not available"));
       return;
     }
@@ -179,7 +186,7 @@ export function tabsSendMessage<T>(tabId: number, message: unknown): Promise<T> 
 
 export function scriptingExecuteScript(options: chrome.scripting.ScriptInjection<unknown[], unknown>): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (typeof chrome === "undefined" || !chrome.scripting?.executeScript) {
+    if (typeof chrome === "undefined" || typeof chrome.scripting?.executeScript !== "function") {
       reject(new Error("chrome.scripting.executeScript is not available"));
       return;
     }

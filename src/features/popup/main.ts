@@ -201,7 +201,20 @@ async function sendBackgroundMessage<T>(
     throw new Error(response?.error ?? "Background request failed");
   }
 
+  if (response.data === undefined) {
+    throw new Error("Background response was missing data");
+  }
+
   return response.data as T;
+}
+
+function isFillResult(value: unknown): value is FillResult {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    Array.isArray((value as FillResult).filledFieldIds) &&
+    Array.isArray((value as FillResult).skippedFieldIds)
+  );
 }
 
 function renderProfileSelect(): void {
@@ -1979,6 +1992,9 @@ async function handleFill(): Promise<void> {
       fields: state.activeForm.fields,
     },
   });
+  if (!isFillResult(result)) {
+    throw new Error("Background fill response was malformed");
+  }
   state.skippedFillFieldIds = [...result.skippedFieldIds];
 
   const historyEntry = {

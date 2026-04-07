@@ -2702,6 +2702,60 @@ describe("popup", () => {
     });
   });
 
+  it("shows a clear fill error when the background fill response is malformed", async () => {
+    const activeForm: ActiveFormContext = {
+      title: "Registration",
+      url: "https://docs.google.com/forms/d/e/1FAIpQLS-popup/viewform",
+      formKey: "malformed-fill-form",
+      fields: [
+        {
+          id: "full_name",
+          label: "Full Name",
+          normalizedLabel: "full name",
+          type: "text",
+          required: false,
+        },
+      ],
+    };
+    const mock = createStorageMock({
+      profiles: [],
+      presets: [],
+      settings: {
+        defaultProfileId: null,
+        autoLoadMatchingProfile: false,
+        confirmBeforeFill: false,
+        showBackupSection: false,
+      },
+      __activeForm: activeForm,
+    });
+
+    vi.stubGlobal("chrome", {
+      ...mock.chrome,
+      runtime: {
+        ...mock.chrome.runtime,
+        sendMessage(message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "FILL_ACTIVE_FORM") {
+            callback({ ok: true, data: { filledFieldIds: ["full_name"] } });
+            return;
+          }
+
+          mock.chrome.runtime.sendMessage(message, callback);
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    document.querySelector<HTMLButtonElement>("#fill-form")!.click();
+
+    await vi.waitFor(() => {
+      const statusCard = document.querySelector<HTMLDivElement>("#status-card")!;
+      expect(statusCard.textContent).toBe("Background fill response was malformed");
+      expect(statusCard.dataset.state).toBe("error");
+    });
+  });
+
   it("rolls back an in-flight autosave when the popup is cleared", async () => {
     const activeForm: ActiveFormContext = {
       title: "Registration",
@@ -4702,6 +4756,59 @@ describe("popup", () => {
       "Open the live Google Form view page, not the editor URL.",
     );
     expect(document.querySelector<HTMLDivElement>("#fields")!.classList.contains("hidden")).toBe(true);
+  });
+
+  it("shows a clear startup error when the background response is missing data", async () => {
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get(keys: string[], callback: (result: Record<string, unknown>) => void) {
+            callback(
+              Object.fromEntries(
+                keys.map((key) => [
+                  key,
+                  key === "settings"
+                    ? {
+                        defaultProfileId: null,
+                        autoLoadMatchingProfile: false,
+                        confirmBeforeFill: false,
+                        showBackupSection: false,
+                      }
+                    : [],
+                ]),
+              ),
+            );
+          },
+          set(_value: Record<string, unknown>, callback: () => void) {
+            callback();
+          },
+          remove(_keys: string[], callback: () => void) {
+            callback();
+          },
+        },
+      },
+      runtime: {
+        sendMessage(message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "GET_ACTIVE_FORM_CONTEXT") {
+            callback({ ok: true });
+            return;
+          }
+
+          callback({ ok: false, error: "Unknown message" });
+        },
+        openOptionsPage(callback: () => void) {
+          callback();
+        },
+      },
+    });
+    vi.stubGlobal("crypto", { randomUUID: () => "preset-1" });
+
+    await loadPopupModule();
+
+    await vi.waitFor(() => {
+      expect(document.querySelector<HTMLHeadingElement>("#error-title")!.textContent).toBe("Unable to read this form");
+      expect(document.querySelector<HTMLParagraphElement>("#error-message")!.textContent).toBe("Background response was missing data");
+    });
   });
 
   it("refuses to fill when the active tab changed to a different form", async () => {

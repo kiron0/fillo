@@ -27,6 +27,10 @@ async function sendToTab<T>(tabId: number, message: ContentRequest): Promise<T> 
     throw new Error(response?.error ?? "Content script did not respond");
   }
 
+  if (response.data === undefined) {
+    throw new Error("Content script response was missing data");
+  }
+
   return response.data as T;
 }
 
@@ -60,12 +64,19 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function isCurrentContentScriptPing(
+  ping: { ready?: boolean; version?: string | null } | null | undefined,
+  expectedVersion: string | null,
+): boolean {
+  return Boolean(ping?.ready && (!expectedVersion || ping.version === expectedVersion));
+}
+
 async function ensureContentScript(tabId: number): Promise<void> {
   const expectedVersion = runtimeManifestVersion();
 
   try {
-    const ping = await sendToTab<{ ready: boolean; version?: string }>(tabId, { type: "PING" });
-    if (ping?.ready && ping.version && expectedVersion && ping.version === expectedVersion) {
+    const ping = await sendToTab<{ ready: boolean; version?: string | null }>(tabId, { type: "PING" });
+    if (isCurrentContentScriptPing(ping, expectedVersion)) {
       return;
     }
 
@@ -80,6 +91,10 @@ async function ensureContentScript(tabId: number): Promise<void> {
         target: { tabId },
         files: ["content/index.js"],
       });
+      const injectedPing = await sendToTab<{ ready: boolean; version?: string | null }>(tabId, { type: "PING" });
+      if (!isCurrentContentScriptPing(injectedPing, expectedVersion)) {
+        throw new Error("Content script version mismatch");
+      }
       return;
     } catch {
       throw new Error("Reload the Google Form tab to use the latest extension code, then open Fillo again.");

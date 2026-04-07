@@ -1,0 +1,253 @@
+import type { BackgroundRequest } from "../src/core/types";
+
+type BackgroundListener = (
+  message: BackgroundRequest,
+  sender: unknown,
+  sendResponse: (response: unknown) => void,
+) => boolean;
+
+function tabWithUrl(url: string): chrome.tabs.Tab {
+  return {
+    active: true,
+    audible: false,
+    autoDiscardable: true,
+    discarded: false,
+    favIconUrl: "",
+    frozen: false,
+    groupId: -1,
+    height: 0,
+    highlighted: true,
+    id: 7,
+    incognito: false,
+    index: 0,
+    mutedInfo: { muted: false },
+    pinned: false,
+    selected: true,
+    status: "complete",
+    title: "",
+    url,
+    width: 0,
+    windowId: 1,
+  };
+}
+
+async function loadBackgroundWithChrome(chromeMock: unknown): Promise<BackgroundListener> {
+  vi.resetModules();
+  const addListener = vi.fn();
+  vi.stubGlobal("chrome", {
+    ...(chromeMock as Record<string, unknown>),
+    runtime: {
+      ...((chromeMock as { runtime?: Record<string, unknown> }).runtime ?? {}),
+      onMessage: {
+        addListener,
+      },
+    },
+  });
+
+  await import("../src/features/background/main");
+  const listener = addListener.mock.calls[0]?.[0] as BackgroundListener | undefined;
+  if (!listener) {
+    throw new Error("Background listener was not registered");
+  }
+
+  return listener;
+}
+
+describe("background", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("scans with an already-ready content script when the expected manifest version is unavailable", async () => {
+    const executeScript = vi.fn();
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage(_tabId: number, message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "PING") {
+            callback({ ok: true, data: { ready: true, version: null } });
+            return;
+          }
+
+          callback({
+            ok: true,
+            data: {
+              formKey: "form-id",
+              title: "Test form",
+              fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+            },
+          });
+        },
+      },
+      scripting: {
+        executeScript,
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: true,
+        data: {
+          status: "ready",
+          pageUrl: "https://docs.google.com/forms/d/e/form-id/viewform",
+          context: {
+            formKey: "form-id",
+            title: "Test form",
+            fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+          },
+        },
+      });
+    });
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("rejects a ready content script without a matching version when the manifest version is known", async () => {
+    const executeScript = vi.fn();
+    const listener = await loadBackgroundWithChrome({
+      runtime: {
+        getManifest() {
+          return { version: "1.2.3" };
+        },
+      },
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage(_tabId: number, _message: { type: string }, callback: (response: unknown) => void) {
+          callback({ ok: true, data: { ready: true, version: null } });
+        },
+      },
+      scripting: {
+        executeScript,
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Reload the Google Form tab to use the latest extension code, then open Fillo again.",
+      });
+    });
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("verifies the content script after injecting it before scanning", async () => {
+    const executeScript = vi.fn((_options: chrome.scripting.ScriptInjection<unknown[], unknown>, callback: () => void) => {
+      callback();
+    });
+    const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
+      if (message.type === "PING" && sendMessage.mock.calls.length === 1) {
+        callback({ ok: false, error: "No receiving end" });
+        return;
+      }
+
+      if (message.type === "PING") {
+        callback({ ok: true, data: { ready: true, version: null } });
+        return;
+      }
+
+      callback({
+        ok: true,
+        data: {
+          formKey: "form-id",
+          title: "Test form",
+          fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+        },
+      });
+    });
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage,
+      },
+      scripting: {
+        executeScript,
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ok: true,
+          data: expect.objectContaining({ status: "ready" }),
+        }),
+      );
+    });
+    expect(executeScript).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns the reload message when the injected content script still does not respond", async () => {
+    const executeScript = vi.fn((_options: chrome.scripting.ScriptInjection<unknown[], unknown>, callback: () => void) => {
+      callback();
+    });
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage(_tabId: number, _message: { type: string }, callback: (response: unknown) => void) {
+          callback({ ok: false, error: "No receiving end" });
+        },
+      },
+      scripting: {
+        executeScript,
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Reload the Google Form tab to use the latest extension code, then open Fillo again.",
+      });
+    });
+    expect(executeScript).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a clear error when a scan response is missing data", async () => {
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage(_tabId: number, message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "PING") {
+            callback({ ok: true, data: { ready: true, version: null } });
+            return;
+          }
+
+          callback({ ok: true });
+        },
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Content script response was missing data",
+      });
+    });
+  });
+});

@@ -1023,6 +1023,39 @@ describe("storage", () => {
         },
       }),
     ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [
+          {
+            id: "preset-3",
+            name: "Scale Without Options",
+            formKey: "form-3",
+            formTitle: "Scale Without Options",
+            fields: [
+              {
+                id: "satisfaction",
+                label: "Satisfaction",
+                normalizedLabel: "satisfaction",
+                type: "scale",
+                required: false,
+              },
+            ],
+            values: {},
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
   });
 
   it("filters malformed stored records on read", async () => {

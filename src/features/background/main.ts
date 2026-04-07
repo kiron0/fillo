@@ -104,8 +104,14 @@ function isDetectedField(value: unknown): value is DetectedField {
 
   const field = value;
   const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
+  const optionBackedTypes = new Set(["radio", "checkbox", "dropdown", "scale", "grid"]);
   const gridRows = field.gridRows;
   const gridRowIds = field.gridRowIds;
+  const optionsValid = optionBackedTypes.has(field.type as string)
+    ? hasOwnKey(field, "options") &&
+      Array.isArray(field.options) &&
+      field.options.every((option) => typeof option === "string")
+    : hasOwnOptionalStringArray(field, "options");
   const gridMetadataValid =
     field.type === "grid"
       ? hasOwnKey(field, "gridRows") &&
@@ -140,7 +146,7 @@ function isDetectedField(value: unknown): value is DetectedField {
           field.textSubtype === "number" ||
           field.textSubtype === "tel" ||
           field.textSubtype === "url"))) &&
-    hasOwnOptionalStringArray(field, "options") &&
+    optionsValid &&
     hasOwnOptionalString(field, "otherOption") &&
     gridMetadataValid &&
     scaleMetadataValid &&

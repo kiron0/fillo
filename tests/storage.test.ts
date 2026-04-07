@@ -302,6 +302,16 @@ describe("storage", () => {
     expect((await exportAppData()).profiles).toHaveLength(0);
   });
 
+  it("rejects malformed export selection metadata", async () => {
+    await expect(exportAppData("profiles" as unknown as { profiles: boolean })).rejects.toThrow(
+      "Export selection must contain only boolean backup section flags.",
+    );
+
+    await expect(exportAppData({ profiles: "yes" } as unknown as { profiles: boolean })).rejects.toThrow(
+      "Export selection must contain only boolean backup section flags.",
+    );
+  });
+
   it("rejects incomplete import payloads without clearing existing data", async () => {
     await saveProfile({
       id: "profile-1",
@@ -321,6 +331,16 @@ describe("storage", () => {
         updatedAt: 1,
       },
     ]);
+  });
+
+  it("rejects non-object import payloads with the backup version error", async () => {
+    await expect(importAppData(null as unknown as Parameters<typeof importAppData>[0])).rejects.toThrow(
+      "Import payload must be a version 1 backup.",
+    );
+
+    await expect(importAppData([] as unknown as Parameters<typeof importAppData>[0])).rejects.toThrow(
+      "Import payload must be a version 1 backup.",
+    );
   });
 
   it("rejects backups with an unsupported version", async () => {

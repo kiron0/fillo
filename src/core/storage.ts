@@ -29,13 +29,16 @@ import type {
 import type { BackgroundRequest } from "./types";
 
 const STORAGE_WRITE_LOCK_NAME = "fillo-storage-write";
+const UNSUPPORTED_IMPORT_ERROR = "Import payload must be a version 1 backup.";
 const MALFORMED_IMPORT_ERROR = "Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.";
+
+function isStringRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 function isPartialExportSelection(value: unknown): value is Partial<ExportSelection> {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    !Array.isArray(value) &&
+    isStringRecord(value) &&
     ((value as Partial<ExportSelection>).profiles === undefined || typeof (value as Partial<ExportSelection>).profiles === "boolean") &&
     ((value as Partial<ExportSelection>).presets === undefined || typeof (value as Partial<ExportSelection>).presets === "boolean") &&
     ((value as Partial<ExportSelection>).settings === undefined || typeof (value as Partial<ExportSelection>).settings === "boolean") &&
@@ -147,6 +150,10 @@ export async function clearAllData(): Promise<void> {
 }
 
 export async function exportAppData(selection: Partial<ExportSelection> = {}): Promise<ExportedAppData> {
+  if (!isPartialExportSelection(selection)) {
+    throw new Error("Export selection must contain only boolean backup section flags.");
+  }
+
   const data = await readAllDirect();
   const resolvedSelection: ExportSelection = { ...DEFAULT_EXPORT_SELECTION, ...selection };
   return {
@@ -161,6 +168,10 @@ export async function exportAppData(selection: Partial<ExportSelection> = {}): P
 }
 
 export async function importAppData(payload: ImportedAppData, selection: Partial<ExportSelection> = {}): Promise<void> {
+  if (!isStringRecord(payload)) {
+    throw new Error(UNSUPPORTED_IMPORT_ERROR);
+  }
+
   if ((payload.selection !== undefined && !isPartialExportSelection(payload.selection)) || !isPartialExportSelection(selection)) {
     throw new Error(MALFORMED_IMPORT_ERROR);
   }

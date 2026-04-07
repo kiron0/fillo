@@ -10,7 +10,7 @@ import {
   saveProfileDirect,
   saveSettingsDirect,
 } from "../../core/storage-ops";
-import type { ActiveFormLookup, BackgroundRequest, ContentRequest, FillResult, MessageResponse, ScanResult } from "../../core/types";
+import type { ActiveFormLookup, BackgroundRequest, ContentRequest, DetectedField, FillResult, MessageResponse, ScanResult } from "../../core/types";
 
 const SCAN_RETRY_ATTEMPTS = 20;
 const SCAN_RETRY_DELAY_MS = 400;
@@ -66,6 +66,52 @@ function isCurrentContentScriptPing(
   return Boolean(ping?.ready && (!expectedVersion || ping.version === expectedVersion));
 }
 
+function isDetectedField(value: unknown): value is DetectedField {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const field = value as DetectedField;
+  const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
+  const gridMetadataValid =
+    field.type === "grid"
+      ? Array.isArray(field.gridRows) &&
+        field.gridRows.every((row) => typeof row === "string") &&
+        (field.gridRowIds === undefined ||
+          (Array.isArray(field.gridRowIds) &&
+            field.gridRowIds.length === field.gridRows.length &&
+            field.gridRowIds.every((rowId) => typeof rowId === "string"))) &&
+        (field.gridMode === "radio" || field.gridMode === "checkbox")
+      : field.gridRows === undefined && field.gridRowIds === undefined && field.gridMode === undefined;
+  const scaleMetadataValid =
+    field.type === "scale"
+      ? (field.scaleLowLabel === undefined || typeof field.scaleLowLabel === "string") &&
+        (field.scaleHighLabel === undefined || typeof field.scaleHighLabel === "string")
+      : field.scaleLowLabel === undefined && field.scaleHighLabel === undefined;
+
+  return (
+    typeof field.id === "string" &&
+    typeof field.label === "string" &&
+    typeof field.normalizedLabel === "string" &&
+    typeof field.type === "string" &&
+    allowedTypes.has(field.type) &&
+    typeof field.required === "boolean" &&
+    (field.textSubtype === undefined ||
+      field.textSubtype === "text" ||
+      field.textSubtype === "email" ||
+      field.textSubtype === "number" ||
+      field.textSubtype === "tel" ||
+      field.textSubtype === "url") &&
+    (field.options === undefined || (Array.isArray(field.options) && field.options.every((option) => typeof option === "string"))) &&
+    (field.otherOption === undefined || typeof field.otherOption === "string") &&
+    gridMetadataValid &&
+    scaleMetadataValid &&
+    (field.sectionKey === undefined || typeof field.sectionKey === "string") &&
+    (field.sectionTitle === undefined || typeof field.sectionTitle === "string") &&
+    (field.helpText === undefined || typeof field.helpText === "string")
+  );
+}
+
 function isScanResult(value: unknown): value is ScanResult {
   return (
     typeof value === "object" &&
@@ -74,7 +120,8 @@ function isScanResult(value: unknown): value is ScanResult {
     typeof (value as ScanResult).title === "string" &&
     typeof (value as ScanResult).url === "string" &&
     typeof (value as ScanResult).formKey === "string" &&
-    Array.isArray((value as ScanResult).fields)
+    Array.isArray((value as ScanResult).fields) &&
+    (value as ScanResult).fields.every(isDetectedField)
   );
 }
 

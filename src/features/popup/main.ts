@@ -222,17 +222,47 @@ function isFillResult(value: unknown): value is FillResult {
 
 function isDetectedField(value: unknown): value is DetectedField {
   const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const field = value as DetectedField;
+  const gridMetadataValid =
+    field.type === "grid"
+      ? Array.isArray(field.gridRows) &&
+        field.gridRows.every((row) => typeof row === "string") &&
+        (field.gridRowIds === undefined ||
+          (Array.isArray(field.gridRowIds) &&
+            field.gridRowIds.length === field.gridRows.length &&
+            field.gridRowIds.every((rowId) => typeof rowId === "string"))) &&
+        (field.gridMode === "radio" || field.gridMode === "checkbox")
+      : field.gridRows === undefined && field.gridRowIds === undefined && field.gridMode === undefined;
+  const scaleMetadataValid =
+    field.type === "scale"
+      ? (field.scaleLowLabel === undefined || typeof field.scaleLowLabel === "string") &&
+        (field.scaleHighLabel === undefined || typeof field.scaleHighLabel === "string")
+      : field.scaleLowLabel === undefined && field.scaleHighLabel === undefined;
 
   return (
-    Boolean(value) &&
-    typeof value === "object" &&
-    !Array.isArray(value) &&
-    typeof (value as DetectedField).id === "string" &&
-    typeof (value as DetectedField).label === "string" &&
-    typeof (value as DetectedField).normalizedLabel === "string" &&
-    typeof (value as DetectedField).type === "string" &&
-    allowedTypes.has((value as DetectedField).type) &&
-    typeof (value as DetectedField).required === "boolean"
+    typeof field.id === "string" &&
+    typeof field.label === "string" &&
+    typeof field.normalizedLabel === "string" &&
+    typeof field.type === "string" &&
+    allowedTypes.has(field.type) &&
+    typeof field.required === "boolean" &&
+    (field.textSubtype === undefined ||
+      field.textSubtype === "text" ||
+      field.textSubtype === "email" ||
+      field.textSubtype === "number" ||
+      field.textSubtype === "tel" ||
+      field.textSubtype === "url") &&
+    (field.options === undefined || (Array.isArray(field.options) && field.options.every((option) => typeof option === "string"))) &&
+    (field.otherOption === undefined || typeof field.otherOption === "string") &&
+    gridMetadataValid &&
+    scaleMetadataValid &&
+    (field.sectionKey === undefined || typeof field.sectionKey === "string") &&
+    (field.sectionTitle === undefined || typeof field.sectionTitle === "string") &&
+    (field.helpText === undefined || typeof field.helpText === "string")
   );
 }
 

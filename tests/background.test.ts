@@ -31,6 +31,16 @@ function tabWithUrl(url: string, id = 7): chrome.tabs.Tab {
   };
 }
 
+function textField() {
+  return {
+    id: "field-1",
+    label: "Name",
+    normalizedLabel: "name",
+    type: "text" as const,
+    required: false,
+  };
+}
+
 async function loadBackgroundWithChrome(chromeMock: unknown): Promise<BackgroundListener> {
   vi.resetModules();
   const addListener = vi.fn();
@@ -77,7 +87,7 @@ describe("background", () => {
               formKey: "form-id",
               title: "Test form",
               url: "https://docs.google.com/forms/d/e/form-id/viewform",
-              fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+              fields: [textField()],
             },
           });
         },
@@ -100,7 +110,7 @@ describe("background", () => {
             formKey: "form-id",
             title: "Test form",
             url: "https://docs.google.com/forms/d/e/form-id/viewform",
-            fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+            fields: [textField()],
           },
         },
       });
@@ -121,7 +131,7 @@ describe("background", () => {
           formKey: "form-id",
           title: "Test form",
           url: "https://docs.google.com/forms/d/e/form-id/viewform",
-          fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+          fields: [textField()],
         },
       });
     });
@@ -195,7 +205,7 @@ describe("background", () => {
           formKey: "form-id",
           title: "Test form",
           url: "https://docs.google.com/forms/d/e/form-id/formResponse",
-          fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+          fields: [textField()],
         },
       });
     });
@@ -278,7 +288,7 @@ describe("background", () => {
           formKey: "form-id",
           title: "Test form",
           url: "https://docs.google.com/forms/d/e/form-id/viewform",
-          fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+          fields: [textField()],
         },
       });
     });
@@ -401,6 +411,45 @@ describe("background", () => {
     });
   });
 
+  it("returns a clear error when a scan response has malformed fields", async () => {
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage(_tabId: number, message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "PING") {
+            callback({ ok: true, data: { ready: true, version: null } });
+            return;
+          }
+
+          callback({
+            ok: true,
+            data: {
+              formKey: "form-id",
+              title: "Test form",
+              url: "https://docs.google.com/forms/d/e/form-id/viewform",
+              fields: [{ id: "field-1", label: "Name", type: "unsupported", required: false }],
+            },
+          });
+        },
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Content script scan response was malformed",
+      });
+    });
+  });
+
   it("returns a clear error when a fill response is malformed", async () => {
     const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
       if (message.type === "PING") {
@@ -415,7 +464,7 @@ describe("background", () => {
             formKey: "form-id",
             title: "Test form",
             url: "https://docs.google.com/forms/d/e/form-id/viewform",
-            fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+            fields: [textField()],
           },
         });
         return;

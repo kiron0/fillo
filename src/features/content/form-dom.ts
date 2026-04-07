@@ -251,10 +251,6 @@ function normalizeFormTitleCandidate(value: string): string {
   return value.replace(/\s+-\s+google forms$/i, "").trim();
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
 function looksLikeShellText(value: string): boolean {
   const normalized = normalizeText(value);
   return (
@@ -347,11 +343,13 @@ function getStructuredFormTitle(root: Document, fieldLabels: string[]): string |
       candidates.push(directTitle);
     }
 
+    const nestedCandidates: string[] = [];
     for (const entry of metadata) {
-      if (isStringArray(entry) && entry.length === 2 && entry[0] === null && typeof entry[1] === "string") {
-        candidates.push(entry[1]);
+      if (Array.isArray(entry) && entry.length === 2 && entry[0] === null && typeof entry[1] === "string") {
+        nestedCandidates.push(entry[1]);
       }
     }
+    candidates.push(...nestedCandidates.reverse());
   }
 
   for (const candidate of candidates) {

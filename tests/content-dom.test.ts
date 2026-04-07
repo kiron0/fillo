@@ -707,6 +707,27 @@ const publicLoadDataTitleFormHtml = `
 </html>
 `;
 
+const publicLoadDataNestedTitleOnlyFormHtml = `
+<!doctype html>
+<html>
+  <head>
+    <title>&lt;div class="HB1eCd-X3SwIb-haAclf"&gt;JavaScript isn't enabled in your browser, so this file can't be opened. Enable and reload.&lt;/div&gt;Registration NotesFull Name</title>
+    <script>
+      var FB_PUBLIC_LOAD_DATA_ = [null, [null, [], null, null, null, null, null, null, null, 73, null, null, null, null, null, null, null, null, null, null, [null, "Registration Notes"], [null, "Student Registration"]], "/forms"];
+    </script>
+  </head>
+  <body>
+    <div role="heading" aria-level="1">
+      &lt;div class="HB1eCd-X3SwIb-haAclf"&gt;JavaScript isn't enabled in your browser, so this file can't be opened. Enable and reload.&lt;/div&gt;Student RegistrationFull Name
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Full Name *</div>
+      <input type="text" name="full_name" />
+    </div>
+  </body>
+</html>
+`;
+
 const fieldPollutedTitleFormHtml = `
 <!doctype html>
 <html>
@@ -2078,6 +2099,15 @@ describe("content dom", () => {
     const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSpublic/viewform");
 
     expect(scan.title).toBe("Test Party");
+    expect(scan.fields).toHaveLength(1);
+  });
+
+  it("uses nested FB_PUBLIC_LOAD_DATA title pairs when the direct title slot is empty", () => {
+    document.documentElement.innerHTML = publicLoadDataNestedTitleOnlyFormHtml;
+
+    const scan = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSnested/viewform");
+
+    expect(scan.title).toBe("Student Registration");
     expect(scan.fields).toHaveLength(1);
   });
 

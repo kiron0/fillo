@@ -144,7 +144,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
       switch (message.type) {
         case "GET_ACTIVE_FORM_CONTEXT": {
           const tab = await getActiveTab();
-          if (!tab?.id) {
+          if (typeof tab?.id !== "number") {
             sendResponse({
               ok: true,
               data: {
@@ -200,7 +200,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
         }
         case "FILL_ACTIVE_FORM": {
           const tab = await getActiveTab();
-          if (!tab?.id || !isGoogleFormUrl(tab.url) || isGoogleFormEditUrl(tab.url)) {
+          if (typeof tab?.id !== "number" || !isGoogleFormUrl(tab.url) || isGoogleFormEditUrl(tab.url)) {
             throw new Error("Open a live Google Form before filling fields.");
           }
 

@@ -6,7 +6,7 @@ type BackgroundListener = (
   sendResponse: (response: unknown) => void,
 ) => boolean;
 
-function tabWithUrl(url: string): chrome.tabs.Tab {
+function tabWithUrl(url: string, id = 7): chrome.tabs.Tab {
   return {
     active: true,
     audible: false,
@@ -17,7 +17,7 @@ function tabWithUrl(url: string): chrome.tabs.Tab {
     groupId: -1,
     height: 0,
     highlighted: true,
-    id: 7,
+    id,
     incognito: false,
     index: 0,
     mutedInfo: { muted: false },
@@ -104,6 +104,48 @@ describe("background", () => {
       });
     });
     expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("treats tab id 0 as a valid active tab", async () => {
+    const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
+      if (message.type === "PING") {
+        callback({ ok: true, data: { ready: true, version: null } });
+        return;
+      }
+
+      callback({
+        ok: true,
+        data: {
+          formKey: "form-id",
+          title: "Test form",
+          fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+        },
+      });
+    });
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform", 0)]);
+        },
+        sendMessage,
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ok: true,
+          data: expect.objectContaining({ status: "ready" }),
+        }),
+      );
+    });
+    expect(sendMessage).toHaveBeenCalledWith(0, { type: "PING" }, expect.any(Function));
   });
 
   it("rejects a ready content script without a matching version when the manifest version is known", async () => {

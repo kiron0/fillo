@@ -670,7 +670,17 @@ function buildChoiceOptions(nodes: HTMLElement[], container: HTMLElement, role: 
 }
 
 function isGridValue(value: FieldValue): value is GridValue {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "grid";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "kind" in value &&
+    value.kind === "grid" &&
+    "rows" in value &&
+    typeof value.rows === "object" &&
+    value.rows !== null &&
+    !Array.isArray(value.rows)
+  );
 }
 
 function getDirectGrid(root: HTMLElement): HTMLElement | null {
@@ -840,7 +850,17 @@ function extractScaleBoundLabels(
 }
 
 function isChoiceWithOtherValue(value: FieldValue): value is ChoiceWithOtherValue {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "choice_with_other";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "kind" in value &&
+    value.kind === "choice_with_other" &&
+    "selected" in value &&
+    (typeof value.selected === "string" || (Array.isArray(value.selected) && value.selected.every((item) => typeof item === "string"))) &&
+    "otherText" in value &&
+    typeof value.otherText === "string"
+  );
 }
 
 function detectField(container: HTMLElement, index: number): FieldDescriptor | null {

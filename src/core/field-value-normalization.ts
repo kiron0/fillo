@@ -2,11 +2,31 @@ import { normalizeText, optionEquals } from "./normalization";
 import type { ChoiceWithOtherValue, DetectedField, FieldValue, GridValue, ProfileValue } from "./types";
 
 export function isChoiceWithOtherValue(value: unknown): value is ChoiceWithOtherValue {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "choice_with_other";
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "kind" in value &&
+    value.kind === "choice_with_other" &&
+    "selected" in value &&
+    (typeof value.selected === "string" || (Array.isArray(value.selected) && value.selected.every((item) => typeof item === "string"))) &&
+    "otherText" in value &&
+    typeof value.otherText === "string"
+  );
 }
 
 export function isGridValue(value: unknown): value is GridValue {
-  return typeof value === "object" && value !== null && "kind" in value && value.kind === "grid" && "rows" in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "kind" in value &&
+    value.kind === "grid" &&
+    "rows" in value &&
+    typeof value.rows === "object" &&
+    value.rows !== null &&
+    !Array.isArray(value.rows)
+  );
 }
 
 export function isValidDateValue(value: string): boolean {

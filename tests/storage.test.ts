@@ -871,6 +871,31 @@ describe("storage", () => {
         createdAt: 2,
         updatedAt: 2,
       },
+      {
+        id: "preset-4",
+        name: "Broken Preset 3",
+        formKey: "form-4",
+        formTitle: "Form 4",
+        fields: [
+          {
+            id: "department",
+            label: "Department",
+            normalizedLabel: "department",
+            type: "radio",
+            required: false,
+            options: ["CSE", "Other"],
+            otherOption: "Other",
+          },
+        ],
+        values: {
+          department: {
+            kind: "choice_with_other",
+            selected: "Other",
+          },
+        },
+        createdAt: 3,
+        updatedAt: 3,
+      },
     ];
     chromeWithState.state.history = [
       {
@@ -920,6 +945,7 @@ describe("storage", () => {
     });
     expect(await getPresetByFormKey("form-2")).toBeNull();
     expect(await getPresetByFormKey("form-3")).toBeNull();
+    expect(await getPresetByFormKey("form-4")).toBeNull();
     expect(await getSettings()).toEqual({
       defaultProfileId: null,
       autoLoadMatchingProfile: true,

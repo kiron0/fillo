@@ -1114,12 +1114,16 @@ function detectField(container: HTMLElement, index: number): FieldDescriptor | n
 
   const textInput = container.querySelector<HTMLInputElement>('input[type="text"], input[type="email"], input[type="number"], input[type="tel"], input[type="url"]');
   if (textInput && isVisible(textInput)) {
+    const textSubtype = textInput.type === "email" || textInput.type === "number" || textInput.type === "tel" || textInput.type === "url"
+      ? textInput.type
+      : "text";
     return {
       field: {
         id: uniqueFieldId(container, label, index),
         label,
         normalizedLabel: normalizeText(label),
         type: "text",
+        textSubtype,
         required: isRequired(container, label),
         helpText: getHelpText(container),
         sectionTitle: getSectionTitle(container),

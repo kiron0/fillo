@@ -192,6 +192,110 @@ describe("background", () => {
     expect(executeScript).not.toHaveBeenCalled();
   });
 
+  it("does not scan non-Forms docs.google.com viewform paths as live forms", async () => {
+    const sendMessage = vi.fn();
+    const executeScript = vi.fn();
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/document/d/example/viewform")]);
+        },
+        sendMessage,
+      },
+      scripting: {
+        executeScript,
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: true,
+        data: {
+          status: "invalid_url",
+          pageUrl: "https://docs.google.com/document/d/example/viewform",
+        },
+      });
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("does not scan malformed Forms viewform paths as live forms", async () => {
+    const sendMessage = vi.fn();
+    const executeScript = vi.fn();
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/not-a-form-id/viewform")]);
+        },
+        sendMessage,
+      },
+      scripting: {
+        executeScript,
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: true,
+        data: {
+          status: "invalid_url",
+          pageUrl: "https://docs.google.com/forms/not-a-form-id/viewform",
+        },
+      });
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("allows account-prefixed Google Forms viewform routes as live forms", async () => {
+    const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
+      if (message.type === "PING") {
+        callback({ ok: true, data: { ready: true, version: null } });
+        return;
+      }
+
+      callback({
+        ok: true,
+        data: {
+          formKey: "form-id",
+          title: "Test form",
+          url: "https://docs.google.com/forms/u/0/d/e/form-id/viewform",
+          fields: [textField()],
+        },
+      });
+    });
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/u/0/d/e/form-id/viewform")]);
+        },
+        sendMessage,
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ok: true,
+          data: expect.objectContaining({ status: "ready" }),
+        }),
+      );
+    });
+  });
+
   it("allows Google Forms formResponse routes as live forms", async () => {
     const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
       if (message.type === "PING") {

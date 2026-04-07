@@ -52,7 +52,7 @@ function isLiveGoogleFormUrl(url: string | undefined): boolean {
     return false;
   }
 
-  return parsed.pathname.endsWith("/viewform") || parsed.pathname.endsWith("/formResponse");
+  return /^\/forms\/(?:u\/\d+\/)?d\/(?:e\/)?[a-zA-Z0-9_-]+\/(?:viewform|formResponse)\/?$/.test(parsed.pathname);
 }
 
 function sleep(ms: number): Promise<void> {

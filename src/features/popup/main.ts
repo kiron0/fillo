@@ -291,11 +291,15 @@ function isActiveFormLookup(value: unknown): value is ActiveFormLookup {
     lookup.status === "invalid_url" ||
     lookup.status === "no_active_tab";
 
-  return (
-    validStatus &&
-    (lookup.pageUrl === undefined || typeof lookup.pageUrl === "string") &&
-    (lookup.context === undefined || isActiveFormContext(lookup.context))
-  );
+  if (!validStatus || (lookup.pageUrl !== undefined && typeof lookup.pageUrl !== "string")) {
+    return false;
+  }
+
+  if (lookup.status === "ready" || lookup.status === "unsupported_only") {
+    return isActiveFormContext(lookup.context);
+  }
+
+  return lookup.context === undefined;
 }
 
 function renderProfileSelect(): void {

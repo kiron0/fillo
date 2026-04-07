@@ -12,7 +12,7 @@ export function extractGoogleFormId(url: string): string | null {
     return null;
   }
 
-  const match = parsed.pathname.match(/^\/forms\/d\/e\/([a-zA-Z0-9_-]+)(?:\/|$)/);
+  const match = parsed.pathname.match(/^\/forms\/(?:u\/\d+\/)?d\/(?:e\/)?([a-zA-Z0-9_-]+)\/(?:viewform|formResponse)\/?$/);
   return match?.[1] ?? null;
 }
 

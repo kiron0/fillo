@@ -7,6 +7,31 @@ describe("form-key", () => {
     );
   });
 
+  it("extracts the google form id from account-prefixed and legacy live form urls", () => {
+    expect(extractGoogleFormId("https://docs.google.com/forms/u/0/d/e/1FAIpQLSd123abcXYZ/viewform")).toBe(
+      "1FAIpQLSd123abcXYZ",
+    );
+    expect(extractGoogleFormId("https://docs.google.com/forms/d/1QzYIJlSM_NdFmBKnH50hmAA66KA4pBjyvTCShgzsF-c/viewform")).toBe(
+      "1QzYIJlSM_NdFmBKnH50hmAA66KA4pBjyvTCShgzsF-c",
+    );
+  });
+
+  it("uses the same google form id for viewform and formResponse urls", () => {
+    const viewKey = createFormKey("https://docs.google.com/forms/u/0/d/e/1FAIpQLSd123abcXYZ/viewform", "Registration", ["Name"]);
+    const responseKey = createFormKey(
+      "https://docs.google.com/forms/u/0/d/e/1FAIpQLSd123abcXYZ/formResponse",
+      "Registration",
+      ["Name"],
+    );
+
+    expect(viewKey).toBe("1FAIpQLSd123abcXYZ");
+    expect(responseKey).toBe(viewKey);
+  });
+
+  it("does not extract google form ids from editor urls", () => {
+    expect(extractGoogleFormId("https://docs.google.com/forms/d/e/1FAIpQLSd123abcXYZ/edit")).toBeNull();
+  });
+
   it("does not extract google form ids from non-google hosts", () => {
     expect(extractGoogleFormId("https://example.com/forms/d/e/1FAIpQLSd123abcXYZ/viewform")).toBeNull();
   });

@@ -815,6 +815,33 @@ describe("content dom", () => {
     });
   });
 
+  it("preserves native text input subtypes when scanning", () => {
+    document.documentElement.innerHTML = `
+<!doctype html>
+<html>
+  <body>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Primary contact</div>
+      <input type="email" name="primary_contact" />
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Applicant score</div>
+      <input type="number" name="score" />
+    </div>
+    <div role="listitem" class="Qr7Oae">
+      <div role="heading">Website</div>
+      <input type="url" name="website" />
+    </div>
+  </body>
+</html>
+`;
+
+    const result = scanFormDocument(document, "https://docs.google.com/forms/d/e/1FAIpQLSsubtypes/viewform");
+
+    expect(result.fields.map((field) => field.type)).toEqual(["text", "text", "text"]);
+    expect(result.fields.map((field) => field.textSubtype)).toEqual(["email", "number", "url"]);
+  });
+
   it("fills text, textarea, radio, checkbox, and select fields", () => {
     document.documentElement.innerHTML = formHtml;
     setInteractiveRoleClicks(document);

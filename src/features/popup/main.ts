@@ -212,10 +212,59 @@ function isFillResult(value: unknown): value is FillResult {
   return (
     Boolean(value) &&
     typeof value === "object" &&
+    !Array.isArray(value) &&
     Array.isArray((value as FillResult).filledFieldIds) &&
     (value as FillResult).filledFieldIds.every((fieldId) => typeof fieldId === "string") &&
     Array.isArray((value as FillResult).skippedFieldIds) &&
     (value as FillResult).skippedFieldIds.every((fieldId) => typeof fieldId === "string")
+  );
+}
+
+function isDetectedField(value: unknown): value is DetectedField {
+  const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
+
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as DetectedField).id === "string" &&
+    typeof (value as DetectedField).label === "string" &&
+    typeof (value as DetectedField).normalizedLabel === "string" &&
+    typeof (value as DetectedField).type === "string" &&
+    allowedTypes.has((value as DetectedField).type) &&
+    typeof (value as DetectedField).required === "boolean"
+  );
+}
+
+function isActiveFormContext(value: unknown): value is ActiveFormContext {
+  return (
+    Boolean(value) &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as ActiveFormContext).title === "string" &&
+    typeof (value as ActiveFormContext).url === "string" &&
+    typeof (value as ActiveFormContext).formKey === "string" &&
+    Array.isArray((value as ActiveFormContext).fields) &&
+    (value as ActiveFormContext).fields.every(isDetectedField)
+  );
+}
+
+function isActiveFormLookup(value: unknown): value is ActiveFormLookup {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const lookup = value as ActiveFormLookup;
+  const validStatus =
+    lookup.status === "ready" ||
+    lookup.status === "unsupported_only" ||
+    lookup.status === "invalid_url" ||
+    lookup.status === "no_active_tab";
+
+  return (
+    validStatus &&
+    (lookup.pageUrl === undefined || typeof lookup.pageUrl === "string") &&
+    (lookup.context === undefined || isActiveFormContext(lookup.context))
   );
 }
 
@@ -1873,6 +1922,10 @@ async function loadPopup(): Promise<void> {
       type: "GET_ACTIVE_FORM_CONTEXT",
     }),
   ]);
+
+  if (!isActiveFormLookup(lookup)) {
+    throw new Error("Background active form response was malformed");
+  }
 
   state.profiles = profiles;
   state.history = history;

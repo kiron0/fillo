@@ -31,7 +31,7 @@ export function storageGet<T extends Record<string, unknown>>(keys: string[]): P
           reject(new Error(error));
           return;
         }
-        resolve((result && typeof result === "object" ? result : {}) as T);
+        resolve((result && typeof result === "object" && !Array.isArray(result) ? result : {}) as T);
       });
     } catch (error) {
       reject(error instanceof Error ? error : new Error("chrome.storage.local.get failed"));

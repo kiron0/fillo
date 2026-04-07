@@ -223,6 +223,21 @@ describe("chrome-api", () => {
     await expect(storageGet(["profiles"])).resolves.toEqual({});
   });
 
+  it("normalizes array storageGet callback results to an empty object", async () => {
+    vi.stubGlobal("chrome", {
+      runtime: {},
+      storage: {
+        local: {
+          get(_keys: string[], callback: (result: unknown) => void) {
+            callback([]);
+          },
+        },
+      },
+    });
+
+    await expect(storageGet(["profiles"])).resolves.toEqual({});
+  });
+
   it("rejects storageSet when chrome.storage.local.set throws synchronously", async () => {
     vi.stubGlobal("chrome", {
       runtime: {},

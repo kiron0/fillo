@@ -25,12 +25,28 @@ function isStringRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
 function isProfileValue(value: unknown): boolean {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+  if (typeof value === "string" || typeof value === "boolean") {
     return true;
   }
 
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isPrimitiveFieldValue(value: unknown): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return true;
+  }
+
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function isDetectedField(value: unknown): boolean {
@@ -81,10 +97,7 @@ function isDetectedField(value: unknown): boolean {
 
 function isFieldValue(value: unknown): boolean {
   return (
-    value === null ||
-    typeof value === "string" ||
-    typeof value === "number" ||
-    typeof value === "boolean" ||
+    isPrimitiveFieldValue(value) ||
     (Array.isArray(value) && value.every((item) => typeof item === "string")) ||
     isChoiceWithOtherValue(value) ||
     (isStringRecord(value) &&
@@ -115,8 +128,8 @@ function isProfile(value: unknown): value is Profile {
   return (
     typeof value.id === "string" &&
     typeof value.name === "string" &&
-    typeof value.createdAt === "number" &&
-    typeof value.updatedAt === "number" &&
+    isFiniteNumber(value.createdAt) &&
+    isFiniteNumber(value.updatedAt) &&
     Object.values(value.values).every(isProfileValue) &&
     (value.aliases === undefined ||
       (isStringRecord(value.aliases) &&
@@ -149,7 +162,7 @@ function isPresetSectionSnapshot(value: unknown): boolean {
     isStringRecord(value) &&
     typeof value.id === "string" &&
     typeof value.title === "string" &&
-    typeof value.updatedAt === "number" &&
+    isFiniteNumber(value.updatedAt) &&
     Array.isArray(value.fieldIds) &&
     value.fieldIds.every((item) => typeof item === "string")
   );
@@ -164,8 +177,8 @@ function isFormPreset(value: unknown): value is FormPreset {
     typeof value.id === "string" &&
     typeof value.formKey === "string" &&
     typeof value.name === "string" &&
-    typeof value.createdAt === "number" &&
-    typeof value.updatedAt === "number" &&
+    isFiniteNumber(value.createdAt) &&
+    isFiniteNumber(value.updatedAt) &&
     Array.isArray(value.fields) &&
     value.fields.every(isDetectedField) &&
     Object.values(value.values).every(isFieldValue) &&
@@ -191,9 +204,9 @@ function isFormHistoryEntry(value: unknown): value is FormHistoryEntry {
     (value.formUrl === undefined || typeof value.formUrl === "string") &&
     (value.lastUsedProfileId === null || typeof value.lastUsedProfileId === "string") &&
     (value.lastUsedProfileName === undefined || value.lastUsedProfileName === null || typeof value.lastUsedProfileName === "string") &&
-    typeof value.lastFilledAt === "number" &&
-    typeof value.filledFieldCount === "number" &&
-    typeof value.skippedFieldCount === "number"
+    isFiniteNumber(value.lastFilledAt) &&
+    isFiniteNumber(value.filledFieldCount) &&
+    isFiniteNumber(value.skippedFieldCount)
   );
 }
 

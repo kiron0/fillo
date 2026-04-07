@@ -840,6 +840,20 @@ describe("storage", () => {
         createdAt: 1,
         updatedAt: 1,
       },
+      {
+        id: "broken-profile-2",
+        name: "Broken 2",
+        values: { fullName: "NaN Timestamp" },
+        createdAt: Number.NaN,
+        updatedAt: 1,
+      },
+      {
+        id: "broken-profile-3",
+        name: "Broken 3",
+        values: { score: Number.POSITIVE_INFINITY },
+        createdAt: 1,
+        updatedAt: 1,
+      },
     ];
     chromeWithState.state.presets = [
       {
@@ -870,6 +884,28 @@ describe("storage", () => {
         values: {},
         createdAt: 2,
         updatedAt: 2,
+      },
+      {
+        id: "preset-5",
+        name: "Broken Preset 4",
+        formKey: "form-5",
+        formTitle: "Form 5",
+        fields: [],
+        values: {},
+        createdAt: 3,
+        updatedAt: Number.POSITIVE_INFINITY,
+      },
+      {
+        id: "preset-6",
+        name: "Broken Preset 5",
+        formKey: "form-6",
+        formTitle: "Form 6",
+        fields: [],
+        values: {
+          score: Number.NaN,
+        },
+        createdAt: 4,
+        updatedAt: 4,
       },
       {
         id: "preset-4",
@@ -916,6 +952,15 @@ describe("storage", () => {
         filledFieldCount: 1,
         skippedFieldCount: 0,
       },
+      {
+        id: "history-3",
+        formKey: "form-3",
+        formTitle: "Form 3",
+        lastUsedProfileId: null,
+        lastFilledAt: Number.NaN,
+        filledFieldCount: 1,
+        skippedFieldCount: 0,
+      },
     ];
     chromeWithState.state.settings = {
       defaultProfileId: ["broken"],
@@ -946,6 +991,8 @@ describe("storage", () => {
     expect(await getPresetByFormKey("form-2")).toBeNull();
     expect(await getPresetByFormKey("form-3")).toBeNull();
     expect(await getPresetByFormKey("form-4")).toBeNull();
+    expect(await getPresetByFormKey("form-5")).toBeNull();
+    expect(await getPresetByFormKey("form-6")).toBeNull();
     expect(await getSettings()).toEqual({
       defaultProfileId: null,
       autoLoadMatchingProfile: true,

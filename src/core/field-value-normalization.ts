@@ -25,7 +25,12 @@ export function isGridValue(value: unknown): value is GridValue {
     "rows" in value &&
     typeof value.rows === "object" &&
     value.rows !== null &&
-    !Array.isArray(value.rows)
+    !Array.isArray(value.rows) &&
+    Object.values(value.rows).every(
+      (rowValue) =>
+        typeof rowValue === "string" ||
+        (Array.isArray(rowValue) && rowValue.every((item) => typeof item === "string")),
+    )
   );
 }
 
@@ -190,6 +195,10 @@ export function normalizeFieldValueForField(
   value: FieldValue | ProfileValue | undefined,
 ): FieldValue | undefined {
   if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  if (typeof value === "number" && !Number.isFinite(value)) {
     return undefined;
   }
 

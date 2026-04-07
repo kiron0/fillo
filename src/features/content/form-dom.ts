@@ -679,7 +679,12 @@ function isGridValue(value: FieldValue): value is GridValue {
     "rows" in value &&
     typeof value.rows === "object" &&
     value.rows !== null &&
-    !Array.isArray(value.rows)
+    !Array.isArray(value.rows) &&
+    Object.values(value.rows).every(
+      (rowValue) =>
+        typeof rowValue === "string" ||
+        (Array.isArray(rowValue) && rowValue.every((item) => typeof item === "string")),
+    )
   );
 }
 
@@ -1178,6 +1183,10 @@ function setNativeInputValue(element: HTMLInputElement | HTMLTextAreaElement, va
 }
 
 function fillTextField(control: HTMLElement, value: FieldValue): boolean {
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    return false;
+  }
+
   if (typeof value !== "string" && typeof value !== "number") {
     return false;
   }

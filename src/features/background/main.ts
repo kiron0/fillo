@@ -34,30 +34,25 @@ async function sendToTab<T>(tabId: number, message: ContentRequest): Promise<T> 
   return response.data as T;
 }
 
-function isGoogleFormUrl(url: string | undefined): boolean {
+function parseUrl(url: string | undefined): URL | null {
   if (!url) {
-    return false;
+    return null;
   }
 
   try {
-    const parsed = new URL(url);
-    return parsed.hostname === "docs.google.com" && parsed.pathname.startsWith("/forms/");
+    return new URL(url);
   } catch {
-    return false;
+    return null;
   }
 }
 
-function isGoogleFormEditUrl(url: string | undefined): boolean {
-  if (!url) {
+function isLiveGoogleFormUrl(url: string | undefined): boolean {
+  const parsed = parseUrl(url);
+  if (!parsed || parsed.hostname !== "docs.google.com") {
     return false;
   }
 
-  try {
-    const parsed = new URL(url);
-    return parsed.hostname === "docs.google.com" && parsed.pathname.startsWith("/forms/") && parsed.pathname.endsWith("/edit");
-  } catch {
-    return false;
-  }
+  return parsed.pathname.endsWith("/viewform") || parsed.pathname.endsWith("/formResponse");
 }
 
 function sleep(ms: number): Promise<void> {
@@ -165,18 +160,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
             return;
           }
 
-          if (!isGoogleFormUrl(tab.url)) {
-            sendResponse({
-              ok: true,
-              data: {
-                status: "invalid_url",
-                pageUrl: tab.url,
-              } satisfies ActiveFormLookup,
-            } satisfies MessageResponse<ActiveFormLookup>);
-            return;
-          }
-
-          if (isGoogleFormEditUrl(tab.url)) {
+          if (!isLiveGoogleFormUrl(tab.url)) {
             sendResponse({
               ok: true,
               data: {
@@ -200,7 +184,7 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
         }
         case "FILL_ACTIVE_FORM": {
           const tab = await getActiveTab();
-          if (typeof tab?.id !== "number" || !isGoogleFormUrl(tab.url) || isGoogleFormEditUrl(tab.url)) {
+          if (typeof tab?.id !== "number" || !isLiveGoogleFormUrl(tab.url)) {
             throw new Error("Open a live Google Form before filling fields.");
           }
 

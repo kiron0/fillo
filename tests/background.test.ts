@@ -148,6 +148,78 @@ describe("background", () => {
     expect(sendMessage).toHaveBeenCalledWith(0, { type: "PING" }, expect.any(Function));
   });
 
+  it("does not scan Google Forms editor response routes as live forms", async () => {
+    const sendMessage = vi.fn();
+    const executeScript = vi.fn();
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/abc123/edit#responses")]);
+        },
+        sendMessage,
+      },
+      scripting: {
+        executeScript,
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: true,
+        data: {
+          status: "invalid_url",
+          pageUrl: "https://docs.google.com/forms/d/abc123/edit#responses",
+        },
+      });
+    });
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("allows Google Forms formResponse routes as live forms", async () => {
+    const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
+      if (message.type === "PING") {
+        callback({ ok: true, data: { ready: true, version: null } });
+        return;
+      }
+
+      callback({
+        ok: true,
+        data: {
+          formKey: "form-id",
+          title: "Test form",
+          fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+        },
+      });
+    });
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/formResponse")]);
+        },
+        sendMessage,
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ok: true,
+          data: expect.objectContaining({ status: "ready" }),
+        }),
+      );
+    });
+  });
+
   it("rejects a ready content script without a matching version when the manifest version is known", async () => {
     const executeScript = vi.fn();
     const listener = await loadBackgroundWithChrome({

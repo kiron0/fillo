@@ -78,6 +78,18 @@ function isScanResult(value: unknown): value is ScanResult {
   );
 }
 
+function isFillResult(value: unknown): value is FillResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Array.isArray((value as FillResult).filledFieldIds) &&
+    (value as FillResult).filledFieldIds.every((fieldId) => typeof fieldId === "string") &&
+    Array.isArray((value as FillResult).skippedFieldIds) &&
+    (value as FillResult).skippedFieldIds.every((fieldId) => typeof fieldId === "string")
+  );
+}
+
 async function ensureContentScript(tabId: number): Promise<void> {
   const expectedVersion = runtimeManifestVersion();
 
@@ -215,6 +227,10 @@ chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendR
               fields: message.payload.fields ?? scan.fields,
             },
           });
+          if (!isFillResult(result)) {
+            throw new Error("Content script fill response was malformed");
+          }
+
           sendResponse({
             ok: true,
             data: result,

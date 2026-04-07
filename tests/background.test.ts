@@ -400,4 +400,66 @@ describe("background", () => {
       });
     });
   });
+
+  it("returns a clear error when a fill response is malformed", async () => {
+    const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
+      if (message.type === "PING") {
+        callback({ ok: true, data: { ready: true, version: null } });
+        return;
+      }
+
+      if (message.type === "SCAN_FORM") {
+        callback({
+          ok: true,
+          data: {
+            formKey: "form-id",
+            title: "Test form",
+            url: "https://docs.google.com/forms/d/e/form-id/viewform",
+            fields: [{ id: "field-1", label: "Name", type: "text", required: false }],
+          },
+        });
+        return;
+      }
+
+      callback({ ok: true, data: { filledFieldIds: ["field-1"], skippedFieldIds: [42] } });
+    });
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage,
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(
+      listener(
+        {
+          type: "FILL_ACTIVE_FORM",
+          payload: {
+            formKey: "form-id",
+            values: { "field-1": "Toufiq" },
+          },
+        },
+        {},
+        sendResponse,
+      ),
+    ).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Content script fill response was malformed",
+      });
+    });
+    expect(sendMessage).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ type: "FILL_FORM" }),
+      expect.any(Function),
+    );
+  });
 });

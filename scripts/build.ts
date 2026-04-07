@@ -10,12 +10,12 @@ const staticFiles = [
   ["src/popup/popup.css", "popup.css"],
   ["src/options/options.html", "options.html"],
   ["src/options/options.css", "options.css"],
-  ["src/assets/icons/icon-16.png", "icons/icon-16.png"],
-  ["src/assets/icons/icon-32.png", "icons/icon-32.png"],
-  ["src/assets/icons/icon-48.png", "icons/icon-48.png"],
-  ["src/assets/icons/icon-128.png", "icons/icon-128.png"],
-  ["src/assets/fonts/space-grotesk-variable.woff2", "fonts/space-grotesk-variable.woff2"],
-  ["src/assets/fonts/OFL.txt", "fonts/OFL.txt"],
+  ["public/icons/icon-16.png", "icons/icon-16.png"],
+  ["public/icons/icon-32.png", "icons/icon-32.png"],
+  ["public/icons/icon-48.png", "icons/icon-48.png"],
+  ["public/icons/icon-128.png", "icons/icon-128.png"],
+  ["public/fonts/space-grotesk-variable.woff2", "fonts/space-grotesk-variable.woff2"],
+  ["public/fonts/OFL.txt", "fonts/OFL.txt"],
 ] as const;
 
 const runtimeEntrypoints = [

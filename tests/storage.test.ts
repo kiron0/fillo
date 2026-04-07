@@ -352,6 +352,12 @@ describe("storage", () => {
         monday: "Morning",
       },
     });
+    const gridWithInheritedRows = {
+      kind: "grid",
+      rows: Object.create({
+        monday: "Morning",
+      }),
+    };
 
     await expect(
       savePreset({
@@ -375,6 +381,20 @@ describe("storage", () => {
         fields: [],
         values: {
           availability: inheritedGrid,
+        },
+        createdAt: 1,
+        updatedAt: 1,
+      } as unknown as Parameters<typeof savePreset>[0]),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+
+    await expect(
+      savePreset({
+        id: "preset-3",
+        name: "Broken Grid Rows Preset",
+        formKey: "form-3",
+        fields: [],
+        values: {
+          availability: gridWithInheritedRows,
         },
         createdAt: 1,
         updatedAt: 1,
@@ -404,6 +424,42 @@ describe("storage", () => {
     await expect(saveSettings(inheritedSettings as unknown as Parameters<typeof saveSettings>[0])).rejects.toThrow(
       "Storage mutation payload must be well-formed.",
     );
+  });
+
+  it("rejects storage records with inherited map entries", async () => {
+    await expect(
+      saveProfile({
+        id: "profile-1",
+        name: "Inherited Values Profile",
+        values: Object.create({ fullName: "Toufiq Hasan" }),
+        createdAt: 1,
+        updatedAt: 1,
+      } as unknown as Parameters<typeof saveProfile>[0]),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+
+    await expect(
+      saveProfile({
+        id: "profile-2",
+        name: "Inherited Aliases Profile",
+        values: { fullName: "Toufiq Hasan" },
+        aliases: Object.create({ fullName: ["name"] }),
+        createdAt: 1,
+        updatedAt: 1,
+      } as unknown as Parameters<typeof saveProfile>[0]),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
+
+    await expect(
+      savePreset({
+        id: "preset-1",
+        name: "Inherited Mappings Preset",
+        formKey: "form-1",
+        fields: [],
+        values: {},
+        mappings: Object.create({ full_name: "fullName" }),
+        createdAt: 1,
+        updatedAt: 1,
+      } as unknown as Parameters<typeof savePreset>[0]),
+    ).rejects.toThrow("Storage mutation payload must be well-formed.");
   });
 
   it("rejects incomplete import payloads without clearing existing data", async () => {
@@ -1041,6 +1097,76 @@ describe("storage", () => {
                 normalizedLabel: "satisfaction",
                 type: "scale",
                 required: false,
+              },
+            ],
+            values: {},
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [
+          {
+            id: "preset-4",
+            name: "Dropdown With Other Option",
+            formKey: "form-4",
+            formTitle: "Dropdown With Other Option",
+            fields: [
+              {
+                id: "department",
+                label: "Department",
+                normalizedLabel: "department",
+                type: "dropdown",
+                required: false,
+                options: ["CSE", "EEE"],
+                otherOption: "Other",
+              },
+            ],
+            values: {},
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [
+          {
+            id: "preset-5",
+            name: "Dropdown With Text Subtype",
+            formKey: "form-5",
+            formTitle: "Dropdown With Text Subtype",
+            fields: [
+              {
+                id: "department",
+                label: "Department",
+                normalizedLabel: "department",
+                type: "dropdown",
+                required: false,
+                options: ["CSE", "EEE"],
+                textSubtype: "email",
               },
             ],
             values: {},

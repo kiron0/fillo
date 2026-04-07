@@ -1,6 +1,16 @@
 import { normalizeText, optionEquals } from "./normalization";
 import type { ChoiceWithOtherValue, DetectedField, FieldValue, GridValue, ProfileValue } from "./types";
 
+function hasOnlyOwnEnumerableProperties(value: Record<string, unknown>): boolean {
+  for (const key in value) {
+    if (!Object.hasOwn(value, key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function isChoiceWithOtherValue(value: unknown): value is ChoiceWithOtherValue {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
@@ -30,6 +40,7 @@ export function isGridValue(value: unknown): value is GridValue {
     typeof record.rows === "object" &&
     record.rows !== null &&
     !Array.isArray(record.rows) &&
+    hasOnlyOwnEnumerableProperties(record.rows as Record<string, unknown>) &&
     Object.values(record.rows).every(
       (rowValue) =>
         typeof rowValue === "string" ||

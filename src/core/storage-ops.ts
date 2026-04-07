@@ -29,6 +29,16 @@ function hasOwnKey(value: Record<string, unknown>, key: string): boolean {
   return Object.hasOwn(value, key);
 }
 
+function hasOnlyOwnEnumerableProperties(value: Record<string, unknown>): boolean {
+  for (const key in value) {
+    if (!hasOwnKey(value, key)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function hasOwnString(value: Record<string, unknown>, key: string): boolean {
   return hasOwnKey(value, key) && typeof value[key] === "string";
 }
@@ -82,6 +92,7 @@ function isDetectedField(value: unknown): boolean {
   const type = value.type;
   const allowedTypes = new Set(["text", "textarea", "radio", "checkbox", "dropdown", "scale", "date", "time", "grid"]);
   const optionBackedTypes = new Set(["radio", "checkbox", "dropdown", "scale", "grid"]);
+  const otherOptionTypes = new Set(["radio", "checkbox"]);
   const gridRows = value.gridRows;
   const gridRowIds = value.gridRowIds;
   const optionsValid = optionBackedTypes.has(type as string)
@@ -89,6 +100,22 @@ function isDetectedField(value: unknown): boolean {
       Array.isArray(value.options) &&
       value.options.every((option) => typeof option === "string")
     : optionalOwnStringArray(value, "options");
+  const textSubtypeValid =
+    type === "text"
+      ? !("textSubtype" in value) ||
+        (hasOwnKey(value, "textSubtype") &&
+          (value.textSubtype === undefined ||
+            value.textSubtype === "text" ||
+            value.textSubtype === "email" ||
+            value.textSubtype === "number" ||
+            value.textSubtype === "tel" ||
+            value.textSubtype === "url"))
+      : !("textSubtype" in value) || (hasOwnKey(value, "textSubtype") && value.textSubtype === undefined);
+  const otherOptionValid =
+    otherOptionTypes.has(type as string)
+      ? optionalOwnString(value, "otherOption") &&
+        (typeof value.otherOption !== "string" || (Array.isArray(value.options) && value.options.includes(value.otherOption)))
+      : !("otherOption" in value) || (hasOwnKey(value, "otherOption") && value.otherOption === undefined);
   const gridMetadataValid =
     type === "grid"
       ? hasOwnKey(value, "gridRows") &&
@@ -117,15 +144,9 @@ function isDetectedField(value: unknown): boolean {
     hasOwnKey(value, "type") &&
     typeof type === "string" &&
     allowedTypes.has(type) &&
-    (!("textSubtype" in value) ||
-      (hasOwnKey(value, "textSubtype") &&
-        (value.textSubtype === "text" ||
-          value.textSubtype === "email" ||
-          value.textSubtype === "number" ||
-          value.textSubtype === "tel" ||
-          value.textSubtype === "url"))) &&
+    textSubtypeValid &&
     optionsValid &&
-    optionalOwnString(value, "otherOption") &&
+    otherOptionValid &&
     gridMetadataValid &&
     scaleMetadataValid &&
     optionalOwnString(value, "sectionKey") &&
@@ -144,6 +165,7 @@ export function isFieldValue(value: unknown): boolean {
       value.kind === "grid" &&
       Object.hasOwn(value, "rows") &&
       isStringRecord(value.rows) &&
+      hasOnlyOwnEnumerableProperties(value.rows) &&
       Object.values(value.rows).every(
         (rowValue) =>
           typeof rowValue === "string" || (Array.isArray(rowValue) && rowValue.every((item) => typeof item === "string")),
@@ -166,7 +188,7 @@ function isAppSettings(value: unknown): value is AppSettings {
 }
 
 function isProfile(value: unknown): value is Profile {
-  if (!isStringRecord(value) || !hasOwnKey(value, "values") || !isStringRecord(value.values)) {
+  if (!isStringRecord(value) || !hasOwnKey(value, "values") || !isStringRecord(value.values) || !hasOnlyOwnEnumerableProperties(value.values)) {
     return false;
   }
 
@@ -179,6 +201,7 @@ function isProfile(value: unknown): value is Profile {
     (!("aliases" in value) ||
       (hasOwnKey(value, "aliases") &&
         isStringRecord(value.aliases) &&
+        hasOnlyOwnEnumerableProperties(value.aliases) &&
         Object.values(value.aliases).every(
           (aliasList) => Array.isArray(aliasList) && aliasList.every((alias) => typeof alias === "string"),
         )))
@@ -216,7 +239,7 @@ function isPresetSectionSnapshot(value: unknown): boolean {
 }
 
 function isFormPreset(value: unknown): value is FormPreset {
-  if (!isStringRecord(value) || !hasOwnKey(value, "values") || !isStringRecord(value.values)) {
+  if (!isStringRecord(value) || !hasOwnKey(value, "values") || !isStringRecord(value.values) || !hasOnlyOwnEnumerableProperties(value.values)) {
     return false;
   }
 
@@ -233,7 +256,10 @@ function isFormPreset(value: unknown): value is FormPreset {
     optionalOwnString(value, "formTitle") &&
     optionalOwnString(value, "formUrl") &&
     (!("mappings" in value) ||
-      (hasOwnKey(value, "mappings") && isStringRecord(value.mappings) && Object.values(value.mappings).every((item) => typeof item === "string"))) &&
+      (hasOwnKey(value, "mappings") &&
+        isStringRecord(value.mappings) &&
+        hasOnlyOwnEnumerableProperties(value.mappings) &&
+        Object.values(value.mappings).every((item) => typeof item === "string"))) &&
     (!("unmappedFieldIds" in value) ||
       (hasOwnKey(value, "unmappedFieldIds") && Array.isArray(value.unmappedFieldIds) && value.unmappedFieldIds.every((item) => typeof item === "string"))) &&
     (!("excludedFieldIds" in value) ||

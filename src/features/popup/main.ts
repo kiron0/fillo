@@ -260,6 +260,7 @@ function isDetectedField(value: unknown): value is DetectedField {
 
   const field = value;
   const optionBackedTypes = new Set(["radio", "checkbox", "dropdown", "scale", "grid"]);
+  const otherOptionTypes = new Set(["radio", "checkbox"]);
   const gridRows = field.gridRows;
   const gridRowIds = field.gridRowIds;
   const optionsValid = optionBackedTypes.has(field.type as string)
@@ -267,6 +268,22 @@ function isDetectedField(value: unknown): value is DetectedField {
       Array.isArray(field.options) &&
       field.options.every((option) => typeof option === "string")
     : hasOwnOptionalStringArray(field, "options");
+  const textSubtypeValid =
+    field.type === "text"
+      ? !("textSubtype" in field) ||
+        (hasOwnKey(field, "textSubtype") &&
+          (field.textSubtype === undefined ||
+            field.textSubtype === "text" ||
+            field.textSubtype === "email" ||
+            field.textSubtype === "number" ||
+            field.textSubtype === "tel" ||
+            field.textSubtype === "url"))
+      : !("textSubtype" in field) || (hasOwnKey(field, "textSubtype") && field.textSubtype === undefined);
+  const otherOptionValid =
+    otherOptionTypes.has(field.type as string)
+      ? hasOwnOptionalString(field, "otherOption") &&
+        (typeof field.otherOption !== "string" || (Array.isArray(field.options) && field.options.includes(field.otherOption)))
+      : !("otherOption" in field) || (hasOwnKey(field, "otherOption") && field.otherOption === undefined);
   const gridMetadataValid =
     field.type === "grid"
       ? hasOwnKey(field, "gridRows") &&
@@ -293,16 +310,9 @@ function isDetectedField(value: unknown): value is DetectedField {
     hasOwnString(field, "type") &&
     allowedTypes.has(field.type as string) &&
     hasOwnBoolean(field, "required") &&
-    (!("textSubtype" in field) ||
-      (hasOwnKey(field, "textSubtype") &&
-        (field.textSubtype === undefined ||
-          field.textSubtype === "text" ||
-          field.textSubtype === "email" ||
-          field.textSubtype === "number" ||
-          field.textSubtype === "tel" ||
-          field.textSubtype === "url"))) &&
+    textSubtypeValid &&
     optionsValid &&
-    hasOwnOptionalString(field, "otherOption") &&
+    otherOptionValid &&
     gridMetadataValid &&
     scaleMetadataValid &&
     hasOwnOptionalString(field, "sectionKey") &&

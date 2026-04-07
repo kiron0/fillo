@@ -836,6 +836,55 @@ describe("background", () => {
     });
   });
 
+  it("returns a clear error when scanned non-choice fields have other-option metadata", async () => {
+    const listener = await loadBackgroundWithChrome({
+      tabs: {
+        query(_queryInfo: chrome.tabs.QueryInfo, callback: (tabs: chrome.tabs.Tab[]) => void) {
+          callback([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]);
+        },
+        sendMessage(_tabId: number, message: { type: string }, callback: (response: unknown) => void) {
+          if (message.type === "PING") {
+            callback({ ok: true, data: { ready: true, version: null } });
+            return;
+          }
+
+          callback({
+            ok: true,
+            data: {
+              formKey: "form-id",
+              title: "Test form",
+              url: "https://docs.google.com/forms/d/e/form-id/viewform",
+              fields: [
+                {
+                  id: "department",
+                  label: "Department",
+                  normalizedLabel: "department",
+                  type: "dropdown",
+                  required: false,
+                  options: ["CSE", "EEE"],
+                  otherOption: "Other",
+                },
+              ],
+            },
+          });
+        },
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: false,
+        error: "Content script scan response was malformed",
+      });
+    });
+  });
+
   it("returns a clear error when a fill response is malformed", async () => {
     const sendMessage = vi.fn((_tabId: number, message: { type: string }, callback: (response: unknown) => void) => {
       if (message.type === "PING") {

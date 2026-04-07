@@ -29,6 +29,19 @@ import type {
 import type { BackgroundRequest } from "./types";
 
 const STORAGE_WRITE_LOCK_NAME = "fillo-storage-write";
+const MALFORMED_IMPORT_ERROR = "Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.";
+
+function isPartialExportSelection(value: unknown): value is Partial<ExportSelection> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    ((value as Partial<ExportSelection>).profiles === undefined || typeof (value as Partial<ExportSelection>).profiles === "boolean") &&
+    ((value as Partial<ExportSelection>).presets === undefined || typeof (value as Partial<ExportSelection>).presets === "boolean") &&
+    ((value as Partial<ExportSelection>).settings === undefined || typeof (value as Partial<ExportSelection>).settings === "boolean") &&
+    ((value as Partial<ExportSelection>).history === undefined || typeof (value as Partial<ExportSelection>).history === "boolean")
+  );
+}
 
 async function runBackgroundMutation<T>(
   payload: Extract<BackgroundRequest, { type: "RUN_STORAGE_MUTATION" }>["payload"],
@@ -148,6 +161,10 @@ export async function exportAppData(selection: Partial<ExportSelection> = {}): P
 }
 
 export async function importAppData(payload: ImportedAppData, selection: Partial<ExportSelection> = {}): Promise<void> {
+  if ((payload.selection !== undefined && !isPartialExportSelection(payload.selection)) || !isPartialExportSelection(selection)) {
+    throw new Error(MALFORMED_IMPORT_ERROR);
+  }
+
   const resolvedSelection: ExportSelection = {
     ...DEFAULT_EXPORT_SELECTION,
     ...(payload.selection ?? {}),

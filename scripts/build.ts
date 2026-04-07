@@ -107,6 +107,8 @@ for (const [folder, sourceName, targetName] of runtimeEntrypoints) {
   const targetMapPath = join(distDir, folder, `${targetName}.map`);
   const sourceMap = await readFile(sourceMapPath, "utf8");
   await writeFile(targetMapPath, sourceMap, "utf8");
+  await rm(sourcePath, { force: true });
+  await rm(sourceMapPath, { force: true });
 }
 
 await writeFile(join(distDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");

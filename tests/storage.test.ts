@@ -339,6 +339,38 @@ describe("storage", () => {
     ).rejects.toThrow("Import payload must be a version 1 backup.");
   });
 
+  it("rejects backup imports with malformed selection metadata", async () => {
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+        selection: "profiles" as unknown as { profiles: boolean },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+
+    await expect(
+      importAppData({
+        version: 1,
+        profiles: [],
+        presets: [],
+        settings: {
+          defaultProfileId: null,
+          autoLoadMatchingProfile: true,
+          confirmBeforeFill: true,
+          showBackupSection: false,
+        },
+        selection: { profiles: "yes" } as unknown as { profiles: boolean },
+      }),
+    ).rejects.toThrow("Import payload must be a valid version 1 backup with well-formed profiles, presets, settings, and history.");
+  });
+
   it("keeps concurrent preset saves from overwriting each other", async () => {
     const presetA: FormPreset = {
       id: "preset-a",

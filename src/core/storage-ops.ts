@@ -220,6 +220,16 @@ function isExportSelection(value: unknown): value is ExportSelection {
   );
 }
 
+function isPartialExportSelection(value: unknown): value is Partial<ExportSelection> {
+  return (
+    isStringRecord(value) &&
+    (value.profiles === undefined || typeof value.profiles === "boolean") &&
+    (value.presets === undefined || typeof value.presets === "boolean") &&
+    (value.settings === undefined || typeof value.settings === "boolean") &&
+    (value.history === undefined || typeof value.history === "boolean")
+  );
+}
+
 export function validateImportedAppData(payload: unknown): payload is ImportedAppData {
   return (
     isStringRecord(payload) &&
@@ -228,7 +238,8 @@ export function validateImportedAppData(payload: unknown): payload is ImportedAp
     (payload.presets === undefined || (Array.isArray(payload.presets) && payload.presets.every(isFormPreset))) &&
     (payload.settings === undefined || isAppSettings(payload.settings)) &&
     (payload.history === undefined || (Array.isArray(payload.history) && payload.history.every(isFormHistoryEntry))) &&
-    (payload.selection === undefined || isExportSelection({ ...DEFAULT_EXPORT_SELECTION, ...payload.selection }))
+    (payload.selection === undefined ||
+      (isPartialExportSelection(payload.selection) && isExportSelection({ ...DEFAULT_EXPORT_SELECTION, ...payload.selection })))
   );
 }
 

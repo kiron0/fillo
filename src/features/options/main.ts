@@ -1,4 +1,4 @@
-import { hasChromeRuntime } from "../../core/chrome-api";
+import { hasBrowserRuntime } from "../../core/browser-api";
 import {
   clearAllData,
   clearHistory,
@@ -725,8 +725,8 @@ clearHistoryButton?.addEventListener("click", () => {
   }, "Unable to clear form history.");
 });
 
-if (!hasChromeRuntime()) {
-  setStatus("Open this page from chrome://extensions or the extension popup.");
+if (!hasBrowserRuntime()) {
+  setStatus("Open this page from your browser's extension manager or the extension popup.");
 } else {
   void refresh().catch((error) => {
     setStatus(error instanceof Error ? error.message : "Failed to load settings");

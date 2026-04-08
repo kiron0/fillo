@@ -69,7 +69,7 @@ export function hasExtensionRuntime(): boolean {
   return typeof runtime === "object" && runtime !== null;
 }
 
-export function hasChromeRuntime(): boolean {
+export function hasBrowserRuntime(): boolean {
   return hasExtensionRuntime();
 }
 
@@ -79,7 +79,7 @@ function getLastErrorMessage(): string | null {
     return null;
   }
 
-  return typeof lastError.message === "string" ? lastError.message : "Chrome runtime error";
+  return typeof lastError.message === "string" ? lastError.message : "Extension runtime error";
 }
 
 export function addRuntimeMessageListener<TMessage>(

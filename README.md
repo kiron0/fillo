@@ -34,7 +34,6 @@ Fillo is a browser extension for Google Forms that works with both Chrome and Fi
 - `bun run build` or `bun run build:chrome` writes the Chrome bundle to `extension/build-chrome`.
 - `bun run build:firefox` writes the Firefox bundle to `extension/build-firefox`.
 - Releases publish separate Chrome and Firefox zip files.
-- Set `FILLO_FIREFOX_EXTENSION_ID` before `build:firefox` if you want a fixed Gecko extension ID in the generated manifest.
 
 ## License
 

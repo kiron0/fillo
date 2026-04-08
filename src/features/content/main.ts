@@ -1,4 +1,4 @@
-import { addRuntimeMessageListener, runtimeManifestVersion } from "../../core/chrome-api";
+import { addRuntimeMessageListener, runtimeManifestVersion } from "../../core/browser-api";
 import { isFieldValue } from "../../core/storage-ops";
 import { fillFormDocumentAsync, scanFormDocument } from "./form-dom";
 import type { ContentRequest, FillRequest, MessageResponse } from "../../core/types";

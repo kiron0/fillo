@@ -1,4 +1,4 @@
-import { hasExtensionRuntime, runtimeSendMessage } from "./chrome-api";
+import { hasExtensionRuntime, runtimeSendMessage } from "./browser-api";
 import {
   clearAllDataDirect,
   clearHistoryDirect,

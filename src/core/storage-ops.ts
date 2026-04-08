@@ -1,4 +1,4 @@
-import { storageGet, storageSet } from "./chrome-api";
+import { storageGet, storageSet } from "./browser-api";
 import { isChoiceWithOtherValue, isValidDateValue, isValidTimeValue, looksLikePlaceholderOption, normalizeFieldValueForField } from "./field-value-normalization";
 import { DEFAULT_EXPORT_SELECTION, DEFAULT_SETTINGS } from "./types";
 import type { AppSettings, DetectedField, ExportSelection, FieldValue, FormHistoryEntry, FormPreset, GridValue, ImportedAppData, Profile } from "./types";

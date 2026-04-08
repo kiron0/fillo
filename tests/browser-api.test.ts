@@ -1,5 +1,5 @@
 import {
-  hasChromeRuntime,
+  hasBrowserRuntime,
   runtimeManifestVersion,
   runtimeOpenOptionsPage,
   runtimeSendMessage,
@@ -9,9 +9,9 @@ import {
   scriptingExecuteScript,
   tabsQuery,
   tabsSendMessage,
-} from "../src/core/chrome-api";
+} from "../src/core/browser-api";
 
-describe("chrome-api", () => {
+describe("browser-api", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
@@ -29,7 +29,7 @@ describe("chrome-api", () => {
       runtime: "broken",
     });
 
-    expect(hasChromeRuntime()).toBe(false);
+    expect(hasBrowserRuntime()).toBe(false);
   });
 
   it("treats browser.runtime as an available extension runtime", () => {
@@ -37,7 +37,7 @@ describe("chrome-api", () => {
       runtime: {},
     });
 
-    expect(hasChromeRuntime()).toBe(true);
+    expect(hasBrowserRuntime()).toBe(true);
   });
 
   it("rejects runtimeOpenOptionsPage when chrome.runtime exists without openOptionsPage", async () => {
@@ -236,7 +236,7 @@ describe("chrome-api", () => {
       },
     });
 
-    await expect(storageGet(["profiles"])).rejects.toThrow("Chrome runtime error");
+    await expect(storageGet(["profiles"])).rejects.toThrow("Extension runtime error");
   });
 
   it("rejects storageGet when chrome.storage.local exists without get", async () => {

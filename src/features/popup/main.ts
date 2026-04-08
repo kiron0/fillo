@@ -1,8 +1,8 @@
 import {
-  hasChromeRuntime,
+  hasBrowserRuntime,
   runtimeOpenOptionsPage,
   runtimeSendMessage,
-} from "../../core/chrome-api";
+} from "../../core/browser-api";
 import {
   getSelectableOptions,
   isChoiceWithOtherValue,
@@ -2406,7 +2406,7 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-if (!hasChromeRuntime()) {
+if (!hasBrowserRuntime()) {
   setStatus("Open this UI through the browser extension popup.", "error");
 } else {
   void loadPopup().catch((error) => {

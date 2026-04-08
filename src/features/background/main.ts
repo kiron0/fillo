@@ -1,4 +1,4 @@
-import { addRuntimeMessageListener, runtimeManifestVersion, scriptingExecuteScript, tabsQuery, tabsSendMessage } from "../../core/chrome-api";
+import { addRuntimeMessageListener, runtimeManifestVersion, scriptingExecuteScript, tabsQuery, tabsSendMessage } from "../../core/browser-api";
 import {
   clearAllDataDirect,
   clearHistoryDirect,

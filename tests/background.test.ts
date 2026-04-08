@@ -63,6 +63,28 @@ async function loadBackgroundWithChrome(chromeMock: unknown): Promise<Background
   return listener;
 }
 
+async function loadBackgroundWithBrowser(browserMock: unknown): Promise<BackgroundListener> {
+  vi.resetModules();
+  const addListener = vi.fn();
+  vi.stubGlobal("browser", {
+    ...(browserMock as Record<string, unknown>),
+    runtime: {
+      ...((browserMock as { runtime?: Record<string, unknown> }).runtime ?? {}),
+      onMessage: {
+        addListener,
+      },
+    },
+  });
+
+  await import("../src/features/background/main");
+  const listener = addListener.mock.calls[0]?.[0] as BackgroundListener | undefined;
+  if (!listener) {
+    throw new Error("Background listener was not registered");
+  }
+
+  return listener;
+}
+
 describe("background", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -116,6 +138,53 @@ describe("background", () => {
       });
     });
     expect(executeScript).not.toHaveBeenCalled();
+  });
+
+  it("registers and runs through browser.runtime when chrome is unavailable", async () => {
+    const listener = await loadBackgroundWithBrowser({
+      runtime: {
+        getManifest() {
+          return { version: "1.2.3" };
+        },
+      },
+      tabs: {
+        query: vi.fn().mockResolvedValue([tabWithUrl("https://docs.google.com/forms/d/e/form-id/viewform")]),
+        sendMessage: vi
+          .fn()
+          .mockResolvedValueOnce({ ok: true, data: { ready: true, version: "1.2.3" } })
+          .mockResolvedValueOnce({
+            ok: true,
+            data: {
+              formKey: "form-id",
+              title: "Test form",
+              url: "https://docs.google.com/forms/d/e/form-id/viewform",
+              fields: [textField()],
+            },
+          }),
+      },
+      scripting: {
+        executeScript: vi.fn(),
+      },
+    });
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "GET_ACTIVE_FORM_CONTEXT" }, {}, sendResponse)).toBe(true);
+
+    await vi.waitFor(() => {
+      expect(sendResponse).toHaveBeenCalledWith({
+        ok: true,
+        data: {
+          status: "ready",
+          pageUrl: "https://docs.google.com/forms/d/e/form-id/viewform",
+          context: {
+            formKey: "form-id",
+            title: "Test form",
+            url: "https://docs.google.com/forms/d/e/form-id/viewform",
+            fields: [textField()],
+          },
+        },
+      });
+    });
   });
 
   it("returns a clear error for malformed background messages", async () => {

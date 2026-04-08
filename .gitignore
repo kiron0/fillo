@@ -7,7 +7,8 @@ bun.lockb
 
 # Build artifacts
 out/
-dist/
+build-chrome/
+build-firefox/
 *.tsbuildinfo
 *.vsix
 

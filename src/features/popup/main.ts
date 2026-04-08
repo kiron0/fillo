@@ -2407,7 +2407,7 @@ window.addEventListener("keydown", (event) => {
 });
 
 if (!hasChromeRuntime()) {
-  setStatus("Open this UI through the Chrome extension popup.", "error");
+  setStatus("Open this UI through the browser extension popup.", "error");
 } else {
   void loadPopup().catch((error) => {
     const message =

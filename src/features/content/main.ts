@@ -1,4 +1,4 @@
-import { runtimeManifestVersion } from "../../core/chrome-api";
+import { addRuntimeMessageListener, runtimeManifestVersion } from "../../core/chrome-api";
 import { isFieldValue } from "../../core/storage-ops";
 import { fillFormDocumentAsync, scanFormDocument } from "./form-dom";
 import type { ContentRequest, FillRequest, MessageResponse } from "../../core/types";
@@ -56,7 +56,7 @@ function isContentRequest(value: unknown): value is ContentRequest {
   return value.type === "FILL_FORM" && hasOwnKey(value, "payload") && isFillRequest(value.payload);
 }
 
-chrome.runtime.onMessage.addListener((message: ContentRequest, _sender, sendResponse) => {
+addRuntimeMessageListener<ContentRequest>((message, _sender, sendResponse) => {
   if (!isContentRequest(message)) {
     sendResponse(respondError(new Error("Malformed content-script message")));
     return false;

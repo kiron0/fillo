@@ -1,4 +1,4 @@
-import { runtimeManifestVersion, scriptingExecuteScript, tabsQuery, tabsSendMessage } from "../../core/chrome-api";
+import { addRuntimeMessageListener, runtimeManifestVersion, scriptingExecuteScript, tabsQuery, tabsSendMessage } from "../../core/chrome-api";
 import {
   clearAllDataDirect,
   clearHistoryDirect,
@@ -358,7 +358,7 @@ function enqueueStorageMutation<T>(action: () => Promise<T>): Promise<T> {
   return run;
 }
 
-chrome.runtime.onMessage.addListener((message: BackgroundRequest, _sender, sendResponse) => {
+addRuntimeMessageListener<BackgroundRequest>((message, _sender, sendResponse) => {
   (async () => {
     try {
       if (!isBackgroundRequest(message)) {

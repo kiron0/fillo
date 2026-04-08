@@ -32,12 +32,30 @@ describe("chrome-api", () => {
     expect(hasChromeRuntime()).toBe(false);
   });
 
+  it("treats browser.runtime as an available extension runtime", () => {
+    vi.stubGlobal("browser", {
+      runtime: {},
+    });
+
+    expect(hasChromeRuntime()).toBe(true);
+  });
+
   it("rejects runtimeOpenOptionsPage when chrome.runtime exists without openOptionsPage", async () => {
     vi.stubGlobal("chrome", {
       runtime: {},
     });
 
     await expect(runtimeOpenOptionsPage()).rejects.toThrow("chrome.runtime is not available");
+  });
+
+  it("uses browser.runtime.sendMessage when chrome is unavailable", async () => {
+    vi.stubGlobal("browser", {
+      runtime: {
+        sendMessage: vi.fn().mockResolvedValue({ ok: true }),
+      },
+    });
+
+    await expect(runtimeSendMessage({ type: "PING" })).resolves.toEqual({ ok: true });
   });
 
   it("rejects runtimeSendMessage when chrome.runtime.sendMessage throws synchronously", async () => {
@@ -87,6 +105,17 @@ describe("chrome-api", () => {
     });
 
     await expect(tabsQuery({ active: true })).rejects.toThrow("boom");
+  });
+
+  it("uses browser.tabs.query when chrome is unavailable", async () => {
+    vi.stubGlobal("browser", {
+      runtime: {},
+      tabs: {
+        query: vi.fn().mockResolvedValue([{ id: 1, active: true }]),
+      },
+    });
+
+    await expect(tabsQuery({ active: true })).resolves.toEqual([{ id: 1, active: true }]);
   });
 
   it("rejects tabsQuery when chrome.tabs exists without query", async () => {
@@ -178,6 +207,19 @@ describe("chrome-api", () => {
     });
 
     await expect(storageGet(["profiles"])).rejects.toThrow("boom");
+  });
+
+  it("uses browser.storage.local.get when chrome is unavailable", async () => {
+    vi.stubGlobal("browser", {
+      runtime: {},
+      storage: {
+        local: {
+          get: vi.fn().mockResolvedValue({ profiles: [] }),
+        },
+      },
+    });
+
+    await expect(storageGet(["profiles"])).resolves.toEqual({ profiles: [] });
   });
 
   it("rejects with a fallback message when chrome.runtime.lastError has no string message", async () => {

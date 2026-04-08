@@ -1,4 +1,4 @@
-import { runtimeSendMessage } from "./chrome-api";
+import { hasExtensionRuntime, runtimeSendMessage } from "./chrome-api";
 import {
   clearAllDataDirect,
   clearHistoryDirect,
@@ -96,7 +96,7 @@ async function runMutation<T>(
     }
   }
 
-  if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.sendMessage === "function") {
+  if (hasExtensionRuntime()) {
     return runBackgroundMutation<T>(payload);
   }
 

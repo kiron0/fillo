@@ -3,7 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const distDir = join(root, "dist");
+const target = process.argv[2] === "firefox" ? "firefox" : "chrome";
+const distDir = join(root, target === "firefox" ? "build-firefox" : "build-chrome");
 
 const staticFiles = [
   ["src/popup/popup.html", "popup.html"],
@@ -34,6 +35,7 @@ const entrypoints = [
 
 const packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as { version?: string };
 const manifestVersion = packageJson.version ?? "0.1.0";
+const firefoxExtensionId = process.env.FILLO_FIREFOX_EXTENSION_ID?.trim();
 
 const manifest = {
   manifest_version: 3,
@@ -48,10 +50,6 @@ const manifest = {
   },
   permissions: ["storage", "activeTab", "scripting"],
   host_permissions: ["https://docs.google.com/forms/*", "https://forms.gle/*"],
-  background: {
-    service_worker: "background/index.js",
-    type: "module",
-  },
   action: {
     default_title: "Fillo",
     default_popup: "popup.html",
@@ -70,6 +68,32 @@ const manifest = {
     },
   ],
 };
+
+const browserManifest =
+  target === "firefox"
+    ? {
+        ...manifest,
+        background: {
+          scripts: ["background/index.js"],
+          type: "module",
+        },
+        ...(firefoxExtensionId
+          ? {
+              browser_specific_settings: {
+                gecko: {
+                  id: firefoxExtensionId,
+                },
+              },
+            }
+          : {}),
+      }
+    : {
+        ...manifest,
+        background: {
+          service_worker: "background/index.js",
+          type: "module",
+        },
+      };
 
 await rm(distDir, { recursive: true, force: true });
 await mkdir(distDir, { recursive: true });
@@ -111,6 +135,6 @@ for (const [folder, sourceName, targetName] of runtimeEntrypoints) {
   await rm(sourceMapPath, { force: true });
 }
 
-await writeFile(join(distDir, "manifest.json"), JSON.stringify(manifest, null, 2), "utf8");
+await writeFile(join(distDir, "manifest.json"), JSON.stringify(browserManifest, null, 2), "utf8");
 
-console.log(`Built extension to ${distDir}`);
+console.log(`Built ${target} extension to ${distDir}`);

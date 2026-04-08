@@ -29,6 +29,29 @@ async function loadContentMainWithChrome(): Promise<ContentListener> {
   return listener;
 }
 
+async function loadContentMainWithBrowser(): Promise<ContentListener> {
+  vi.resetModules();
+  const addListener = vi.fn();
+  vi.stubGlobal("browser", {
+    runtime: {
+      getManifest() {
+        return { version: "1.2.3" };
+      },
+      onMessage: {
+        addListener,
+      },
+    },
+  });
+
+  await import("../src/features/content/main");
+  const listener = addListener.mock.calls[0]?.[0] as ContentListener | undefined;
+  if (!listener) {
+    throw new Error("Content listener was not registered");
+  }
+
+  return listener;
+}
+
 describe("content main", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -36,6 +59,21 @@ describe("content main", () => {
 
   it("responds to ping messages", async () => {
     const listener = await loadContentMainWithChrome();
+    const sendResponse = vi.fn();
+
+    expect(listener({ type: "PING" }, {}, sendResponse)).toBe(false);
+
+    expect(sendResponse).toHaveBeenCalledWith({
+      ok: true,
+      data: {
+        ready: true,
+        version: "1.2.3",
+      },
+    });
+  });
+
+  it("responds to ping messages when only browser runtime is available", async () => {
+    const listener = await loadContentMainWithBrowser();
     const sendResponse = vi.fn();
 
     expect(listener({ type: "PING" }, {}, sendResponse)).toBe(false);
